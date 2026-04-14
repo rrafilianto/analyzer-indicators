@@ -23,8 +23,14 @@ export class PaperTradingEngine implements TradingEngine {
   /**
    * Calculate realized PnL.
    *
-   * Long:  PnL = (Exit - Entry) × Size × Leverage
-   * Short: PnL = (Entry - Exit) × Size × Leverage
+   * `size` is a dollar amount (e.g. $5). At 5x leverage the notional is $25.
+   * BTC quantity = notional / entryPrice.
+   *
+   * Long:  PnL = (Exit - Entry) / Entry × Size × Leverage
+   * Short: PnL = (Entry - Exit) / Entry × Size × Leverage
+   *
+   * Example (Long, entry $75,602, exit $75,268, $5 × 5x):
+   *   PnL = (75268 - 75602) / 75602 × 5 × 5 = -0.00443 × 25 ≈ -$0.11
    */
   calculatePnL(
     side: PositionSide,
@@ -33,11 +39,14 @@ export class PaperTradingEngine implements TradingEngine {
     size: number,
     leverage: number
   ): number {
+    if (!entryPrice || entryPrice <= 0) return 0;
+
     const priceDiff = side === "long"
       ? exitPrice - entryPrice
       : entryPrice - exitPrice;
 
-    return priceDiff * size * leverage;
+    // Percentage return × notional value
+    return (priceDiff / entryPrice) * size * leverage;
   }
 
   async openPosition(params: OpenPositionParams): Promise<void> {
