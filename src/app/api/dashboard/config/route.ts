@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "../../../../lib/supabase";
+import { formatError } from "../../../../lib/error-format";
 
 // ==========================================
 // Dashboard Config API
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
   } catch (error) {
+    console.error("[ConfigAPI] Error:", formatError(error, "config"));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }

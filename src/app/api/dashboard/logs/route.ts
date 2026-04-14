@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "../../../../lib/supabase";
+import { formatError } from "../../../../lib/error-format";
 
 // ==========================================
 // Execution Logs API
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error) {
+    console.error("[LogsAPI] Error:", formatError(error, "logs"));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }

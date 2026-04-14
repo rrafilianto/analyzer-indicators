@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { formatError, readResponseError } from "./error-format";
 
 let _supabase: ReturnType<typeof createClient> | null = null;
 
@@ -44,24 +45,42 @@ export async function fetchCandles(
   interval = "5m",
   limit = 200
 ): Promise<import("../engine/types").Candle[]> {
-  const res = await fetch(
-    `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-  );
+  const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const fallbackUrl = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
 
-  if (!res.ok) {
-    throw new Error(`Failed to fetch candles: ${res.statusText}`);
+  let lastError: unknown;
+
+  // Try futures API first, fallback to spot API
+  for (const apiUrl of [url, fallbackUrl]) {
+    try {
+      console.log(`[fetchCandles] GET ${apiUrl}`);
+      const res = await fetch(apiUrl);
+
+      if (!res.ok) {
+        const body = await readResponseError(res);
+        console.error(`[fetchCandles] HTTP ${res.status} ${res.statusText} | URL: ${apiUrl} | Body: ${body}`);
+        lastError = new Error(`HTTP ${res.status} ${res.statusText}: ${body}`);
+        continue; // try fallback
+      }
+
+      const data: BinanceCandle[] = await res.json();
+      console.log(`[fetchCandles] Success from ${apiUrl.includes("fapi") ? "futures" : "spot"}: ${data.length} candles`);
+
+      return data.map((candle) => ({
+        timestamp: candle.openTime,
+        open: parseFloat(candle.open),
+        high: parseFloat(candle.high),
+        low: parseFloat(candle.low),
+        close: parseFloat(candle.close),
+        volume: parseFloat(candle.volume),
+      }));
+    } catch (error) {
+      console.error(`[fetchCandles] Network error: ${formatError(error, apiUrl)}`);
+      lastError = error;
+    }
   }
 
-  const data: BinanceCandle[] = await res.json();
-
-  return data.map((candle) => ({
-    timestamp: candle.openTime,
-    open: parseFloat(candle.open),
-    high: parseFloat(candle.high),
-    low: parseFloat(candle.low),
-    close: parseFloat(candle.close),
-    volume: parseFloat(candle.volume),
-  }));
+  throw new Error(`Failed to fetch candles: ${formatError(lastError)}`);
 }
 
 // ==========================================

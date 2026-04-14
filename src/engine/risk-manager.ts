@@ -1,4 +1,5 @@
 import { getSupabase } from "../lib/supabase";
+import { formatError } from "../lib/error-format";
 
 // ==========================================
 // Risk Manager
@@ -218,7 +219,7 @@ export async function haltAccount(indicatorId: string): Promise<void> {
 
   if (error) {
     console.error(`[RiskManager] Failed to halt account ${indicatorId}:`, error);
-    throw error;
+    throw new Error(formatError(error, "risk-manager"));
   }
 
   console.log(`[RiskManager] Account ${indicatorId} halted`);
@@ -235,7 +236,7 @@ export async function setKillSwitch(enabled: boolean): Promise<void> {
 
   if (error) {
     console.error("[RiskManager] Failed to update kill switch:", error);
-    throw error;
+    throw new Error(formatError(error, "risk-manager"));
   }
 
   console.log(`[RiskManager] Kill switch ${enabled ? "enabled" : "disabled"}`);

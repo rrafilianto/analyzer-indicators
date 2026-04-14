@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "../../../../lib/supabase";
+import { formatError } from "../../../../lib/error-format";
 
 // ==========================================
 // Dashboard Overview API
@@ -124,6 +125,7 @@ export async function GET() {
       leverage: (configMap.get("leverage") as { value?: number })?.value ?? 5,
     });
   } catch (error) {
+    console.error("[OverviewAPI] Error:", formatError(error, "overview"));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }

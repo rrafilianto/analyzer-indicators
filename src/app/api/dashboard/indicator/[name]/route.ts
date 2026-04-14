@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "../../../../../lib/supabase";
+import { formatError } from "../../../../../lib/error-format";
 
 // ==========================================
 // Indicator Detail API
@@ -102,7 +103,7 @@ export async function GET(
       currentPrice,
     });
   } catch (error) {
-    console.error("[IndicatorDetail] Full error:", error);
+    console.error("[IndicatorDetail] Error:", formatError(error, "indicator-detail"));
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
   }

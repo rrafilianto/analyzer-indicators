@@ -1,4 +1,5 @@
 import { getSupabase } from "../lib/supabase";
+import { formatError } from "../lib/error-format";
 
 // ==========================================
 // Metrics Calculator
@@ -160,7 +161,7 @@ async function upsertMetrics(
     );
 
   if (error) {
-    console.error(`[Metrics] Failed to upsert metrics for ${indicatorId}:`, error);
+    console.error(`[Metrics] Failed to upsert metrics for ${indicatorId}:`, formatError(error, "metrics"));
     throw error;
   }
 }
@@ -189,7 +190,7 @@ export async function getAllMetrics(): Promise<
     .order("score", { ascending: false });
 
   if (error) {
-    console.error("[Metrics] Failed to fetch all metrics:", error);
+    console.error("[Metrics] Failed to fetch all metrics:", formatError(error, "metrics"));
     return [];
   }
 

@@ -12,6 +12,7 @@ import {
   getSupabase,
 } from "../lib/supabase";
 import { getLongStopLoss, getShortStopLoss } from "./market-structure";
+import { formatError } from "../lib/error-format";
 
 // ==========================================
 // Position Manager
@@ -89,7 +90,7 @@ export async function processSignal(
       );
     }
   } catch (error) {
-    console.error(`[PositionManager] Error processing signal for ${indicatorId}:`, error);
+    console.error(`[PositionManager] Error processing signal for ${indicatorId}:`, formatError(error, "position-manager"));
   }
 }
 
