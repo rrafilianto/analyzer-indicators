@@ -30,15 +30,18 @@ export function getSupabase() {
 // Helper: Fetch latest N candles from Binance
 // ==========================================
 
-export interface BinanceCandle {
-  openTime: number;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
-  closeTime: number;
-}
+// Binance kline response is an array-of-arrays:
+// [openTime, open, high, low, close, volume, closeTime, ...]
+export type BinanceRawCandle = [
+  number,  // 0: openTime
+  string,  // 1: open
+  string,  // 2: high
+  string,  // 3: low
+  string,  // 4: close
+  string,  // 5: volume
+  number,  // 6: closeTime
+  ...unknown[]
+];
 
 export async function fetchCandles(
   symbol = "BTCUSDT",
@@ -63,16 +66,17 @@ export async function fetchCandles(
         continue; // try fallback
       }
 
-      const data: BinanceCandle[] = await res.json();
+      // Response is array-of-arrays, e.g. [[openTime, open, high, low, close, volume, ...], ...]
+      const data: BinanceRawCandle[] = await res.json();
       console.log(`[fetchCandles] Success from ${apiUrl.includes("fapi") ? "futures" : "spot"}: ${data.length} candles`);
 
       return data.map((candle) => ({
-        timestamp: candle.openTime,
-        open: parseFloat(candle.open),
-        high: parseFloat(candle.high),
-        low: parseFloat(candle.low),
-        close: parseFloat(candle.close),
-        volume: parseFloat(candle.volume),
+        timestamp: candle[0],
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4]),
+        volume: parseFloat(candle[5]),
       }));
     } catch (error) {
       console.error(`[fetchCandles] Network error: ${formatError(error, apiUrl)}`);
