@@ -7,7 +7,9 @@
 //   /help         — list of commands
 //   /status       — system overview: all indicators, positions, kill switch
 //   /leaderboard  — all-time ranking by composite score
+//   /leaderboard  — all-time ranking by composite score
 //   /pnl          — today's realized PnL per indicator
+//   /position     — details of active open positions
 // ==========================================
 
 import { getSupabase } from "./supabase";
@@ -68,6 +70,9 @@ export async function handleCommand(
     case "/pnl":
       await cmdPnl(chatId);
       break;
+    case "/position":
+      await cmdPosition(chatId, _args);
+      break;
     default:
       await replyTo(
         chatId,
@@ -103,6 +108,7 @@ async function cmdHelp(chatId: number): Promise<void> {
     `/status       — Ringkasan semua indikator & posisi terbuka`,
     `/leaderboard  — Ranking all-time berdasarkan score`,
     `/pnl          — PnL hari ini per indikator`,
+    `/position     — Detail posisi terbuka (opsional: /position macd)`,
     `/help         — Tampilkan pesan ini`,
   ].join("\n");
 
@@ -416,5 +422,102 @@ async function cmdPnl(chatId: number): Promise<void> {
     const msg = formatError(error);
     console.error("[TelegramCommands] /pnl error:", msg);
     await replyTo(chatId, `❌ Gagal mengambil data:\n<code>${msg}</code>`);
+  }
+}
+
+// ==========================================
+// /position
+// ==========================================
+
+async function cmdPosition(chatId: number, args: string[]): Promise<void> {
+  await replyTo(chatId, "⏳ Mengambil data posisi...");
+
+  try {
+    const db = getSupabase();
+
+    // Fetch open positions with indicator name
+    const { data: openPositions, error } = await db
+      .from("positions")
+      .select(`
+        *,
+        indicators!inner (name)
+      `)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false });
+
+    if (error) throw error;
+
+    const filterName = args.length > 0 ? args.join(" ").toLowerCase() : null;
+
+    type PosRow = {
+      id: string;
+      side: string;
+      entry_price: number;
+      stop_loss: number;
+      take_profit: number;
+      size: number;
+      leverage: number;
+      opened_at: string;
+      indicators: { name: string };
+    };
+
+    let positions = (openPositions as unknown as PosRow[]) ?? [];
+
+    if (filterName) {
+      positions = positions.filter((p) =>
+        p.indicators.name.toLowerCase().includes(filterName) ||
+        formatIndicatorName(p.indicators.name).toLowerCase().includes(filterName)
+      );
+    }
+
+    if (positions.length === 0) {
+      if (filterName) {
+        await replyTo(chatId, `🔍 Tidak ada posisi terbuka untuk indikator yang mengandung "<b>${filterName}</b>"`);
+      } else {
+        await replyTo(chatId, `◻️ Saat ini tidak ada posisi yang terbuka.`);
+      }
+      return;
+    }
+
+    const lines: string[] = [
+      `🎯 <b>OPEN POSITIONS</b>`,
+      `<i>${new Date().toUTCString()}</i>`,
+      ``,
+    ];
+
+    for (const pos of positions) {
+      const name = pos.indicators.name;
+      const emoji = INDICATOR_EMOJI[name] ?? "📊";
+      const sideEmoji = SIDE_EMOJI[pos.side] ?? "◻️";
+      
+      const openedAt = new Date(pos.opened_at);
+      const durationMs = Date.now() - openedAt.getTime();
+      const hours = Math.floor(durationMs / 3600000);
+      const mins = Math.floor((durationMs % 3600000) / 60000);
+      const durationStr = hours > 0 ? `${hours}j ${mins}m` : `${mins}m`;
+
+      const riskPct = (Math.abs(pos.entry_price - pos.stop_loss) / pos.entry_price) * 100;
+      const notional = pos.size * pos.leverage;
+
+      lines.push(
+        `${emoji} <b>${formatIndicatorName(name)}</b>`,
+        `${sideEmoji} <b>Sisi:</b> ${pos.side.toUpperCase()}`,
+        `📍 <b>Entry:</b> $${pos.entry_price.toFixed(2)}`,
+        `🛑 <b>SL:</b> $${pos.stop_loss.toFixed(2)} <i>(${riskPct.toFixed(2)}% risk)</i>`,
+        `🎯 <b>TP:</b> $${pos.take_profit.toFixed(2)}`,
+        `💰 <b>Size:</b> $${pos.size} × ${pos.leverage}x = $${notional} notional`,
+        `⏱ <b>Durasi:</b> ${durationStr} <i>(dibuka ${openedAt.toLocaleTimeString('id-ID', {timeZone: 'UTC'})} UTC)</i>`,
+        ``
+      );
+    }
+
+    lines.push(`━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`Total Open Posisi: <b>${positions.length}</b>`);
+
+    await replyTo(chatId, lines.join("\n"));
+  } catch (error) {
+    const msg = formatError(error);
+    console.error("[TelegramCommands] /position error:", msg);
+    await replyTo(chatId, `❌ Gagal mengambil data posisi:\n<code>${msg}</code>`);
   }
 }
