@@ -71,6 +71,9 @@ export async function processSignal(
     const riskCheck = await canTrade(indicatorId);
     if (!riskCheck.canTrade) {
       console.log(`[PositionManager] ${indicatorId} blocked by risk: ${riskCheck.reason}`);
+      // ZOMBIE PREVENTION: We must still monitor existing open positions to enforce SL/TP triggers
+      // before blocking normal execution.
+      await checkOpenPosition(indicatorId, candles, engine, marketStructure);
       return;
     }
 
