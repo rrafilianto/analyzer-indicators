@@ -276,8 +276,12 @@ async function closePositionWithTrade(
   );
 
   // Calculate R multiple
+  // Dollar risk = (price risk / entry) × notional
   const risk = Math.abs(position.entry_price - position.stop_loss);
-  const rMultiple = risk > 0 ? pnl / (position.size * position.leverage * risk) : 0;
+  const dollarRisk = position.entry_price > 0
+    ? (risk / position.entry_price) * position.size * position.leverage
+    : 0;
+  const rMultiple = dollarRisk > 0 ? pnl / dollarRisk : 0;
 
   // Calculate duration in minutes
   const duration = Math.floor(
