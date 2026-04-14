@@ -60,6 +60,12 @@ export async function processSignal(
   engine: TradingEngine = new PaperTradingEngine()
 ): Promise<void> {
   try {
+    // Validate candles data
+    if (!candles || candles.length === 0) {
+      console.warn(`[PositionManager] No candles data for ${indicatorId}, skipping`);
+      return;
+    }
+
     // Risk check
     const riskCheck = await canTrade(indicatorId);
     if (!riskCheck.canTrade) {
@@ -188,6 +194,13 @@ async function openNewPosition(
   engine: TradingEngine
 ): Promise<void> {
   const currentPrice = candles[candles.length - 1]!.close;
+
+  // Validate currentPrice
+  if (!currentPrice || !isFinite(currentPrice) || currentPrice <= 0) {
+    console.error(`[PositionManager] Invalid currentPrice for ${indicatorId}: ${currentPrice}. Cannot open position.`);
+    return;
+  }
+
   const positionSide: PositionSide = signal === "LONG" ? "long" : "short";
 
   // Get SL from market structure
