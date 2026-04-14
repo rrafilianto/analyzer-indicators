@@ -10,10 +10,12 @@
 //   /leaderboard  — all-time ranking by composite score
 //   /pnl          — today's realized PnL per indicator
 //   /position     — details of active open positions
+//   /killswitch   — toggle global kill switch (on/off)
 // ==========================================
 
 import { getSupabase } from "./supabase";
 import { formatError } from "./error-format";
+import { notifyKillSwitch } from "./telegram";
 
 // ==========================================
 // Core reply helper
@@ -73,6 +75,9 @@ export async function handleCommand(
     case "/position":
       await cmdPosition(chatId, _args);
       break;
+    case "/killswitch":
+      await cmdKillswitch(chatId, _args);
+      break;
     default:
       await replyTo(
         chatId,
@@ -109,6 +114,7 @@ async function cmdHelp(chatId: number): Promise<void> {
     `/leaderboard  — Ranking all-time berdasarkan score`,
     `/pnl          — PnL hari ini per indikator`,
     `/position     — Detail posisi terbuka (opsional: /position macd)`,
+    `/killswitch   — Toggle Kill Switch on/off (contoh: /killswitch on)`,
     `/help         — Tampilkan pesan ini`,
   ].join("\n");
 
@@ -519,5 +525,43 @@ async function cmdPosition(chatId: number, args: string[]): Promise<void> {
     const msg = formatError(error);
     console.error("[TelegramCommands] /position error:", msg);
     await replyTo(chatId, `❌ Gagal mengambil data posisi:\n<code>${msg}</code>`);
+  }
+}
+
+// ==========================================
+// /killswitch
+// ==========================================
+
+async function cmdKillswitch(chatId: number, args: string[]): Promise<void> {
+  const arg = args[0]?.toLowerCase();
+
+  if (arg !== "on" && arg !== "off") {
+    await replyTo(
+      chatId,
+      `⚠️ <b>Format salah!</b>\n\nGunakan:\n<code>/killswitch on</code> untuk menghentikan trading.\n<code>/killswitch off</code> untuk melanjutkan trading.`
+    );
+    return;
+  }
+
+  const enabled = arg === "on";
+  await replyTo(chatId, `⏳ Memproses perintah killswitch ${arg}...`);
+
+  try {
+    const db = getSupabase();
+    const reason = enabled ? "Manual diaktifkan via Telegram Command" : null;
+
+    const { error } = await db
+      .from("system_config")
+      .update({ value: { enabled, reason } })
+      .eq("key", "kill_switch");
+
+    if (error) throw error;
+
+    // Trigger standard notification
+    await notifyKillSwitch(enabled, reason || undefined, true);
+  } catch (error) {
+    const msg = formatError(error);
+    console.error("[TelegramCommands] /killswitch error:", msg);
+    await replyTo(chatId, `❌ Gagal update Kill Switch:\n<code>${msg}</code>`);
   }
 }

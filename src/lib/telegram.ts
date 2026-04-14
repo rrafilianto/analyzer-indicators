@@ -394,3 +394,28 @@ export async function notifyPositionClosed(params: ClosePositionNotif): Promise<
 
   await sendMessage(text);
 }
+
+// ==========================================
+// Kill Switch Notification
+// ==========================================
+
+export async function notifyKillSwitch(enabled: boolean, reason?: string, triggerByCommand: boolean = false): Promise<void> {
+  let text = "";
+  if (enabled) {
+    text = [
+      `🚨 <b>KILL SWITCH: AKTIF</b> 🚨`,
+      ``,
+      `Semua aktivitas trading telah dihentikan! Engine tidak akan membuka posisi baru atau memproses sinyal hingga Kill Switch dinonaktifkan.`,
+      reason ? `\n<b>Alasan:</b> ${reason}` : "",
+      triggerByCommand ? "" : `\n<i>Gunakan perintah /killswitch off untuk mengaktifkan kembali.</i>`
+    ].filter(Boolean).join("\n");
+  } else {
+    text = [
+      `🟢 <b>KILL SWITCH: NON-AKTIF</b> 🟢`,
+      ``,
+      `Engine trading kembali berjalan normal.`
+    ].join("\n");
+  }
+
+  await sendMessage(text);
+}

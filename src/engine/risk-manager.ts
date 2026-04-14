@@ -1,6 +1,6 @@
 import { getSupabase } from "../lib/supabase";
 import { formatError } from "../lib/error-format";
-import { notifyDailySummary } from "../lib/telegram";
+import { notifyDailySummary, notifyKillSwitch } from "../lib/telegram";
 
 // ==========================================
 // Risk Manager
@@ -71,9 +71,21 @@ export async function checkGlobalRisk(): Promise<RiskStatus> {
     if (accounts) {
       for (const account of accounts) {
         if (account.daily_loss >= maxLoss) {
+          const reason = `Max daily loss reached oleh indikator ${account.indicator_id} ($${account.daily_loss.toFixed(2)} >= $${maxLoss})`;
+          
+          // Auto-trigger global kill switch in DB
+          const db = getSupabase();
+          await db
+            .from("system_config")
+            .update({ value: { enabled: true, reason } })
+            .eq("key", "kill_switch");
+            
+          // Dispatch Telegram notification (fire-and-forget)
+          notifyKillSwitch(true, reason, false).catch(() => {});
+
           return {
             canTrade: false,
-            reason: `Max daily loss reached (${account.daily_loss.toFixed(2)} >= ${maxLoss})`,
+            reason,
           };
         }
       }
