@@ -13,6 +13,7 @@ import {
 } from "../lib/supabase";
 import { getLongStopLoss, getShortStopLoss } from "./market-structure";
 import { formatError } from "../lib/error-format";
+import { notifyPositionOpened, notifyPositionClosed } from "../lib/telegram";
 
 // ==========================================
 // Position Manager
@@ -238,6 +239,19 @@ async function openNewPosition(
     size: positionSize,
     leverage,
   });
+
+  // Send Telegram notification
+  const indicatorName = await getIndicatorName(indicatorId);
+  await notifyPositionOpened({
+    indicatorName,
+    side: positionSide,
+    entryPrice: currentPrice,
+    stopLoss,
+    takeProfit,
+    size: positionSize,
+    leverage,
+    openedAt: new Date(),
+  }).catch((err) => console.error("[Telegram] notifyPositionOpened failed:", err));
 }
 
 /**
@@ -291,6 +305,28 @@ async function closePositionWithTrade(
   console.log(
     `[PositionManager] Closed ${position.id}: ${exitReason} | PnL: ${pnl.toFixed(2)} | R: ${rMultiple.toFixed(2)}`
   );
+
+  // Send Telegram notification
+  const indicatorName = await getIndicatorName(position.indicator_id);
+  const account = await getAccount(position.indicator_id).catch(() => null);
+  const newBalance = account?.balance ?? 0;
+
+  await notifyPositionClosed({
+    indicatorName,
+    side: positionSide,
+    entryPrice: position.entry_price,
+    exitPrice,
+    stopLoss: position.stop_loss,
+    takeProfit: position.take_profit,
+    size: position.size,
+    leverage: position.leverage,
+    pnl,
+    rMultiple: Math.round(rMultiple * 10000) / 10000,
+    duration,
+    exitReason,
+    exitedAt,
+    newBalance,
+  }).catch((err) => console.error("[Telegram] notifyPositionClosed failed:", err));
 }
 
 /**
@@ -328,6 +364,19 @@ async function updateTrailingStopLoss(
 
     console.log(`[PositionManager] Trailing SL updated for ${position.id}: ${position.stop_loss} → ${newSL}`);
   }
+}
+
+/**
+ * Get the indicator name by ID.
+ */
+async function getIndicatorName(indicatorId: string): Promise<string> {
+  const { getSupabase } = await import("../lib/supabase");
+  const { data } = await getSupabase()
+    .from("indicators")
+    .select("name")
+    .eq("id", indicatorId)
+    .single();
+  return data?.name ?? indicatorId;
 }
 
 /**

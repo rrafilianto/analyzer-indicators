@@ -8,6 +8,7 @@ import { processSignal } from "../../../../engine/position-manager";
 import { PaperTradingEngine } from "../../../../engine/paper-trading-engine";
 import { recalculateMetrics, getAllMetrics } from "../../../../engine/metrics";
 import { checkGlobalRisk, resetDailyLoss, autoResetDailyLoss } from "../../../../engine/risk-manager";
+import { notifyCronFatalError, notifyCronIndicatorError } from "../../../../lib/telegram";
 
 // ==========================================
 // Cron Trading Endpoint
@@ -114,6 +115,13 @@ export async function GET(request: NextRequest) {
         const durationMs = Date.now() - start;
         logger.error(`Processing failed: ${errorMsg}`, { error: errorMsg, durationMs }, indicator.name);
         results[indicator.name] = { signal: "ERROR", error: errorMsg, durationMs };
+
+        // Notify Telegram: per-indicator error
+        await notifyCronIndicatorError({
+          indicatorName: indicator.name,
+          error: errorMsg,
+          durationMs,
+        }).catch(() => {}); // fire-and-forget, jangan sampai block engine
       }
     }
 
@@ -147,6 +155,13 @@ export async function GET(request: NextRequest) {
     const errorMsg = formatError(error);
     logger.error(`Fatal error: ${errorMsg}`, { code: (error as any)?.code, details: errorMsg });
     await logger.flush();
+
+    // Notify Telegram: fatal cron crash
+    await notifyCronFatalError({
+      error: errorMsg,
+      requestId: logger.getRequestId(),
+      executionTimeMs: Date.now() - parseInt(logger.getRequestId().split("-")[0]!),
+    }).catch(() => {});
 
     return NextResponse.json(
       { status: "error", error: errorMsg, requestId: logger.getRequestId() },

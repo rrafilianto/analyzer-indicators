@@ -1,5 +1,6 @@
 import { getSupabase } from "../lib/supabase";
 import { formatError } from "../lib/error-format";
+import { notifyDailySummary } from "../lib/telegram";
 
 // ==========================================
 // Risk Manager
@@ -139,6 +140,86 @@ export async function resetDailyLoss(): Promise<void> {
       console.error("[RiskManager] Failed to insert daily loss history:", insertError);
     }
   }
+
+  // ── Build & send daily summary before reset ──────────────────────────────
+  try {
+    const todayStart = new Date(
+      Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())
+    ).toISOString();
+
+    // Fetch today's closed trades joined with indicator name
+    const { data: todayTrades } = await db
+      .from("multi_trades")
+      .select(`
+        pnl,
+        positions!inner (
+          indicator_id,
+          indicators!inner ( name )
+        )
+      `)
+      .gte("exited_at", todayStart);
+
+    // Fetch all-time scores per indicator
+    const { data: metricsRows } = await db
+      .from("performance_metrics")
+      .select("indicator_id, score");
+
+    const scoreMap = new Map<string, number>();
+    metricsRows?.forEach((m) => scoreMap.set(m.indicator_id, m.score));
+
+    // Group trades by indicator
+    type TradeRow = {
+      pnl: number;
+      positions: { indicator_id: string; indicators: { name: string } };
+    };
+
+    const indicatorMap = new Map<
+      string,
+      { name: string; dailyPnl: number; tradeCount: number; wins: number; balance: number; score: number }
+    >();
+
+    // Seed from accounts (to include indicators with 0 trades today)
+    for (const acc of accounts || []) {
+      const indId = acc.indicator_id;
+      indicatorMap.set(indId, {
+        name: indId, // placeholder, will be overwritten
+        dailyPnl: 0,
+        tradeCount: 0,
+        wins: 0,
+        balance: acc.balance,
+        score: scoreMap.get(indId) ?? 0,
+      });
+    }
+
+    // Resolve indicator names in one query
+    const { data: indRows } = await db.from("indicators").select("id, name");
+    indRows?.forEach((ind) => {
+      const entry = indicatorMap.get(ind.id);
+      if (entry) entry.name = ind.name;
+    });
+
+    // Accumulate trade stats
+    for (const trade of (todayTrades as unknown as TradeRow[]) ?? []) {
+      const indId = trade.positions.indicator_id;
+      const indName = trade.positions.indicators.name;
+      const entry = indicatorMap.get(indId);
+      if (entry) {
+        entry.name = indName;
+        entry.dailyPnl += trade.pnl;
+        entry.tradeCount += 1;
+        if (trade.pnl > 0) entry.wins += 1;
+      }
+    }
+
+    await notifyDailySummary({
+      date: todayUTC,
+      indicators: Array.from(indicatorMap.values()),
+    });
+  } catch (summaryErr) {
+    // Never block reset because of notification failure
+    console.error("[RiskManager] Failed to send daily summary:", summaryErr);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Now reset daily_loss to 0 (Supabase requires WHERE clause — use always-true condition)
   const { error: resetError } = await db
