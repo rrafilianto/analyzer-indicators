@@ -40,15 +40,11 @@ export async function GET(request: NextRequest) {
 
   try {
     // Step 1: Global risk check
+    // If the system is globally halted (e.g. Kill Switch), we log it but WE MUST CONTINUE
+    // execution so that open positions can be monitored for TP/SL and closed safely.
     const globalRisk = await checkGlobalRisk();
     if (!globalRisk.canTrade) {
-      logger.warn("Trading blocked by global risk", { reason: globalRisk.reason });
-      await logger.flush();
-      return NextResponse.json({
-        status: "blocked",
-        reason: globalRisk.reason,
-        requestId: logger.getRequestId(),
-      });
+      logger.warn("Global trading block active. Will only monitor and close open positions.", { reason: globalRisk.reason });
     }
 
     // Step 1.5: Auto-reset daily loss at UTC midnight
