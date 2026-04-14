@@ -8,6 +8,17 @@ import { PaperTradingEngine } from "../../../../engine/paper-trading-engine";
 import { recalculateMetrics, getAllMetrics } from "../../../../engine/metrics";
 import { checkGlobalRisk, resetDailyLoss, autoResetDailyLoss } from "../../../../engine/risk-manager";
 
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const err = error as Record<string, unknown>;
+    if (typeof err.message === "string") return err.message;
+    if (typeof err.detail === "string") return err.detail;
+    if (typeof err.code === "string") return `DB Error: ${err.code}`;
+  }
+  return String(error);
+}
+
 // ==========================================
 // Cron Trading Endpoint
 //
@@ -109,7 +120,7 @@ export async function GET(request: NextRequest) {
 
         logger.info(`Processed successfully`, { durationMs: Date.now() - start }, indicator.name);
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = extractErrorMessage(error);
         const durationMs = Date.now() - start;
         logger.error(`Processing failed: ${errorMsg}`, { error: errorMsg, durationMs }, indicator.name);
         results[indicator.name] = { signal: "ERROR", error: errorMsg, durationMs };
@@ -143,8 +154,8 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    logger.error(`Fatal error: ${errorMsg}`, { error: errorMsg });
+    const errorMsg = extractErrorMessage(error);
+    logger.error(`Fatal error: ${errorMsg}`, { code: (error as any)?.code, details: errorMsg });
     await logger.flush();
 
     return NextResponse.json(
@@ -184,7 +195,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = extractErrorMessage(error);
     logger.error(`Reset failed: ${errorMsg}`, { error: errorMsg });
     await logger.flush();
     return NextResponse.json({ error: errorMsg }, { status: 500 });

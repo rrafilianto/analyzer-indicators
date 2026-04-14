@@ -139,10 +139,11 @@ export async function resetDailyLoss(): Promise<void> {
     }
   }
 
-  // Now reset daily_loss to 0
+  // Now reset daily_loss to 0 (Supabase requires WHERE clause — use always-true condition)
   const { error: resetError } = await db
     .from("accounts")
-    .update({ daily_loss: 0 });
+    .update({ daily_loss: 0 })
+    .gte("daily_loss", 0);
 
   if (resetError) {
     console.error("[RiskManager] Failed to reset daily loss:", resetError);
