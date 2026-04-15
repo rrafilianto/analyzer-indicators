@@ -55,12 +55,17 @@ export async function recalculateMetrics(indicatorId: string): Promise<void> {
   const { winrate, profitFactor, maxDrawdown } = calculateTradeMetrics(tradeList);
   const score = calculateScore(winrate, profitFactor, maxDrawdown);
 
+  // NUMERIC(5,4) in Postgres: max absolute value is 9.9999.
+  // We must clamp every value before upserting to avoid numeric field overflow.
+  const MAX = 9.9999;
+  const clamp = (v: number) => Math.max(-MAX, Math.min(MAX, v));
+
   await upsertMetrics(indicatorId, {
     total_trades: totalTrades,
-    winrate: Math.round(winrate * 10000) / 10000,
-    profit_factor: Math.round(profitFactor * 10000) / 10000,
-    max_drawdown: Math.round(maxDrawdown * 10000) / 10000,
-    score: Math.round(score * 10000) / 10000,
+    winrate:       clamp(Math.round(winrate       * 10000) / 10000),
+    profit_factor: clamp(Math.round(profitFactor  * 10000) / 10000),
+    max_drawdown:  clamp(Math.round(maxDrawdown   * 10000) / 10000),
+    score:         clamp(Math.round(score         * 10000) / 10000),
   });
 
   console.log(
