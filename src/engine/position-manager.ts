@@ -215,13 +215,26 @@ async function openNewPosition(
     stopLoss = getShortStopLoss(marketStructure);
   }
 
-  // Fallback: if no market structure SL, use ATR-based SL
+  // CRITICAL VALIDATION: SL must be on the correct side of entry price!
+  // LONG: SL must be BELOW entry. SHORT: SL must be ABOVE entry.
+  // Market structure can return nonsensical values during volatile conditions.
+  if (stopLoss !== null) {
+    if (positionSide === "long" && stopLoss >= currentPrice) {
+      console.warn(`[PositionManager] Market structure SL ($${stopLoss}) is ABOVE entry ($${currentPrice}) for LONG — discarding`);
+      stopLoss = null;
+    } else if (positionSide === "short" && stopLoss <= currentPrice) {
+      console.warn(`[PositionManager] Market structure SL ($${stopLoss}) is BELOW entry ($${currentPrice}) for SHORT — discarding`);
+      stopLoss = null;
+    }
+  }
+
+  // Fallback: if no valid SL, use percentage-based SL (0.5%)
   if (!stopLoss) {
     const atrFallback = currentPrice * 0.005; // 0.5% fallback
     stopLoss = positionSide === "long"
       ? currentPrice - atrFallback
       : currentPrice + atrFallback;
-    console.log(`[PositionManager] No market structure SL, using fallback: ${stopLoss}`);
+    console.log(`[PositionManager] Using fallback SL: ${stopLoss}`);
   }
 
   // Calculate TP with RR 1:2
@@ -350,14 +363,14 @@ async function updateTrailingStopLoss(
 
   if (positionSide === "long") {
     const hl = getLongStopLoss(marketStructure);
-    // Only move SL up (never down for longs)
-    if (hl && hl > position.stop_loss) {
+    // Only move SL up (never down for longs), but NEVER above entry price
+    if (hl && hl > position.stop_loss && hl < position.entry_price) {
       newSL = hl;
     }
   } else {
     const lh = getShortStopLoss(marketStructure);
-    // Only move SL down (never up for shorts)
-    if (lh && lh < position.stop_loss) {
+    // Only move SL down (never up for shorts), but NEVER below entry price
+    if (lh && lh < position.stop_loss && lh > position.entry_price) {
       newSL = lh;
     }
   }
