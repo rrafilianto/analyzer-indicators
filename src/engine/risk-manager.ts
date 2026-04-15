@@ -119,7 +119,34 @@ export async function canTrade(indicatorId: string): Promise<RiskStatus> {
  */
 export async function resetDailyLoss(): Promise<void> {
   const db = getSupabase();
-  const todayUTC = new Date().toISOString().split("T")[0]!; // YYYY-MM-DD
+  const now = new Date();
+
+  // At midnight UTC reset, persist stats for the day that just ended (yesterday).
+  const yesterdayStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1)
+  ).toISOString();
+  const todayStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  ).toISOString();
+  const historyDate = new Date(yesterdayStart).toISOString().split("T")[0]!;
+
+  // Build per-indicator realized PnL + trade count for yesterday.
+  const { data: dailyTrades } = await db
+    .from("multi_trades")
+    .select(`
+      pnl,
+      positions!inner ( indicator_id )
+    `)
+    .gte("exited_at", yesterdayStart)
+    .lt("exited_at", todayStart);
+
+  const pnlByIndicator = new Map<string, number>();
+  const tradeCountByIndicator = new Map<string, number>();
+  for (const trade of (dailyTrades as Array<{ pnl: number; positions: { indicator_id: string } }> | null) ?? []) {
+    const indId = trade.positions.indicator_id;
+    pnlByIndicator.set(indId, (pnlByIndicator.get(indId) ?? 0) + trade.pnl);
+    tradeCountByIndicator.set(indId, (tradeCountByIndicator.get(indId) ?? 0) + 1);
+  }
 
   // Fetch all accounts for snapshot
   const { data: accounts, error: fetchError } = await db
@@ -134,13 +161,13 @@ export async function resetDailyLoss(): Promise<void> {
   // Snapshot each account before reset
   const snapshots = (accounts || []).map((acc) => ({
     indicator_id: acc.indicator_id,
-    date: todayUTC,
+    date: historyDate,
     daily_loss: acc.daily_loss,
-    daily_pnl: acc.equity - acc.balance, // Net change during the day
+    daily_pnl: pnlByIndicator.get(acc.indicator_id) ?? 0,
     balance_before: acc.balance,
     balance_after: acc.balance, // Balance doesn't change on reset
     equity_before: acc.equity,
-    trade_count: 0, // Will be updated separately if needed
+    trade_count: tradeCountByIndicator.get(acc.indicator_id) ?? 0,
   }));
 
   if (snapshots.length > 0) {
@@ -155,20 +182,8 @@ export async function resetDailyLoss(): Promise<void> {
 
   // ── Build & send daily summary before reset ──────────────────────────────
   try {
-    const now = new Date();
-
-    // At midnight UTC reset, the "day that just ended" is YESTERDAY.
-    // We query from yesterdayStart → todayStart (the full day that completed).
-    const yesterdayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1)
-    ).toISOString(); // e.g. 2026-04-14T00:00:00.000Z
-
-    const todayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-    ).toISOString(); // e.g. 2026-04-15T00:00:00.000Z
-
     // Date label should show the day that just ended (yesterday)
-    const summaryDate = new Date(yesterdayStart).toISOString().split("T")[0]!;
+    const summaryDate = historyDate;
 
     // Fetch today's (yesterday's) closed trades joined with indicator name
     const { data: todayTrades } = await db

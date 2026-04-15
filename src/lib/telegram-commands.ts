@@ -30,20 +30,25 @@ async function replyTo(chatId: number, text: string): Promise<void> {
 
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
 
-  if (!res.ok) {
-    const body = await res.text();
-    console.error(`[TelegramCommands] replyTo failed: HTTP ${res.status} — ${body}`);
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[TelegramCommands] replyTo failed: HTTP ${res.status} — ${body}`);
+    }
+  } catch (error) {
+    console.error(`[TelegramCommands] replyTo network/timeout error: ${formatError(error, "telegram-sendMessage")}`);
   }
 }
 
@@ -147,36 +152,54 @@ function formatIndicatorName(name: string): string {
 }
 
 async function cmdStatus(chatId: number): Promise<void> {
-  await replyTo(chatId, "⏳ Mengambil data...");
+  void replyTo(chatId, "⏳ Mengambil data...");
 
   try {
     const db = getSupabase();
 
-    // Fetch indicators with accounts + metrics
-    const { data: indicators, error: indError } = await db
-      .from("indicators")
-      .select(`
-        id, name, is_active,
-        accounts!inner(balance, equity, daily_loss, is_halted),
-        performance_metrics!inner(total_trades, winrate, score)
-      `)
-      .order("name");
+    const [indRes, openPosRes, configRes, tradeRes] = await Promise.all([
+      db
+        .from("indicators")
+        .select(`
+          id, name, is_active,
+          accounts!inner(balance, equity, daily_loss, is_halted),
+          performance_metrics!inner(total_trades, winrate, score)
+        `)
+        .order("name"),
+      db
+        .from("positions")
+        .select("*")
+        .eq("status", "open"),
+      db
+        .from("system_config")
+        .select("key, value"),
+      db
+        .from("multi_trades")
+        .select(`
+          pnl,
+          positions!inner(indicator_id)
+        `),
+    ]);
 
+    const { data: indicators, error: indError } = indRes;
     if (indError) throw indError;
-
-    // Fetch all open positions
-    const { data: openPositions } = await db
-      .from("positions")
-      .select("*")
-      .eq("status", "open");
+    const { data: openPositions } = openPosRes;
+    const { data: configRows, error: configError } = configRes;
+    if (configError) throw configError;
+    const { data: allTrades, error: tradeError } = tradeRes;
+    if (tradeError) throw tradeError;
 
     const posMap = new Map<string, any>();
     openPositions?.forEach((p) => posMap.set(p.indicator_id, p));
-
-    // Fetch system config
-    const { data: configRows } = await db
-      .from("system_config")
-      .select("key, value");
+    const realizedPnlMap = new Map<string, number>();
+    (allTrades || []).forEach((t: any) => {
+      const indicatorId = t.positions?.indicator_id;
+      if (!indicatorId) return;
+      realizedPnlMap.set(
+        indicatorId,
+        (realizedPnlMap.get(indicatorId) ?? 0) + Number(t.pnl ?? 0)
+      );
+    });
 
     const configMap = new Map<string, any>();
     configRows?.forEach((r) => configMap.set(r.key, r.value));
@@ -216,11 +239,15 @@ async function cmdStatus(chatId: number): Promise<void> {
         : "✅ <i>Aktif</i>";
 
       const balanceLine = `💰 Balance: <b>$${Number(acc?.balance ?? 0).toFixed(2)}</b> | Equity: $${Number(acc?.equity ?? 0).toFixed(2)}`;
+      const realizedPnl = realizedPnlMap.get(ind.id) ?? 0;
+      const unrealizedPnl = Number(acc?.equity ?? 0) - Number(acc?.balance ?? 0);
+      const pnlLine = `📊 PnL Rlz/Unrlz: ${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)} / ${unrealizedPnl >= 0 ? "+" : ""}$${unrealizedPnl.toFixed(2)}`;
       const dailyLossLine = `📉 Daily Loss: $${Number(acc?.daily_loss ?? 0).toFixed(4)}`;
       const metricsLine = `📐 ${met?.total_trades ?? 0} trades | WR: ${(Number(met?.winrate ?? 0) * 100).toFixed(1)}% | Score: ${(Number(met?.score ?? 0) * 100).toFixed(1)}`;
 
       lines.push(``, `${emoji} <b>${formatIndicatorName(ind.name)}</b> — ${statusTag}`);
       lines.push(balanceLine);
+      lines.push(pnlLine);
       lines.push(dailyLossLine);
       lines.push(metricsLine);
 
@@ -250,7 +277,7 @@ async function cmdStatus(chatId: number): Promise<void> {
 // ==========================================
 
 async function cmdLeaderboard(chatId: number): Promise<void> {
-  await replyTo(chatId, "⏳ Mengambil data...");
+  void replyTo(chatId, "⏳ Mengambil data...");
 
   try {
     const db = getSupabase();
@@ -317,7 +344,7 @@ async function cmdLeaderboard(chatId: number): Promise<void> {
 // ==========================================
 
 async function cmdPnl(chatId: number): Promise<void> {
-  await replyTo(chatId, "⏳ Mengambil data...");
+  void replyTo(chatId, "⏳ Mengambil data...");
 
   try {
     const db = getSupabase();
@@ -330,24 +357,25 @@ async function cmdPnl(chatId: number): Promise<void> {
 
     const dateLabel = now.toISOString().split("T")[0]!;
 
-    // Fetch today's trades
-    const { data: todayTrades } = await db
-      .from("multi_trades")
-      .select(`
-        pnl, exit_reason,
-        positions!inner(
-          indicator_id,
-          indicators!inner(name)
-        )
-      `)
-      .gte("exited_at", todayStart);
-
-    // Fetch all indicators (to include ones with 0 trades)
-    const { data: indicators, error } = await db
-      .from("indicators")
-      .select("id, name, is_active, accounts!inner(daily_loss)")
-      .order("name");
-
+    const [todayTradesRes, indicatorsRes] = await Promise.all([
+      db
+        .from("multi_trades")
+        .select(`
+          pnl, exit_reason,
+          positions!inner(
+            indicator_id,
+            indicators!inner(name)
+          )
+        `)
+        .gte("exited_at", todayStart),
+      db
+        .from("indicators")
+        .select("id, name, is_active, accounts!inner(daily_loss)")
+        .order("name"),
+    ]);
+    const { data: todayTrades, error: tradesError } = todayTradesRes;
+    if (tradesError) throw tradesError;
+    const { data: indicators, error } = indicatorsRes;
     if (error) throw error;
 
     // Group today's trades by indicator
@@ -436,7 +464,7 @@ async function cmdPnl(chatId: number): Promise<void> {
 // ==========================================
 
 async function cmdPosition(chatId: number, args: string[]): Promise<void> {
-  await replyTo(chatId, "⏳ Mengambil data posisi...");
+  void replyTo(chatId, "⏳ Mengambil data posisi...");
 
   try {
     const db = getSupabase();
@@ -544,7 +572,7 @@ async function cmdKillswitch(chatId: number, args: string[]): Promise<void> {
   }
 
   const enabled = arg === "on";
-  await replyTo(chatId, `⏳ Memproses perintah killswitch ${arg}...`);
+  void replyTo(chatId, `⏳ Memproses perintah killswitch ${arg}...`);
 
   try {
     const db = getSupabase();

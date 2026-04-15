@@ -8,6 +8,8 @@ interface IndicatorCardProps {
   isActive: boolean;
   balance: number;
   equity: number;
+  pnlRealized: number;
+  pnlUnrealized: number;
   dailyLoss: number;
   isHalted: boolean;
   totalTrades: number;
@@ -36,6 +38,8 @@ export function IndicatorCard({
   isActive,
   balance,
   equity,
+  pnlRealized,
+  pnlUnrealized,
   dailyLoss,
   isHalted,
   totalTrades,
@@ -46,6 +50,8 @@ export function IndicatorCard({
 }: IndicatorCardProps) {
   const scoreColor =
     score >= 0.7 ? "text-emerald-400" : score >= 0.4 ? "text-yellow-400" : "text-red-400";
+  const pnlRealizedColor = pnlRealized >= 0 ? "text-emerald-400" : "text-red-400";
+  const pnlUnrealizedColor = pnlUnrealized >= 0 ? "text-emerald-400" : "text-red-400";
 
   return (
     <div
@@ -81,6 +87,22 @@ export function IndicatorCard({
         <div>
           <div className="text-xs text-gray-500">Equity</div>
           <div className="text-sm font-mono text-white">${equity.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* PnL */}
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <div className="text-xs text-gray-500">PnL Realized</div>
+          <div className={`text-sm font-mono ${pnlRealizedColor}`}>
+            {pnlRealized >= 0 ? "+" : "-"}${Math.abs(pnlRealized).toFixed(2)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500">PnL Unrealized</div>
+          <div className={`text-sm font-mono ${pnlUnrealizedColor}`}>
+            {pnlUnrealized >= 0 ? "+" : "-"}${Math.abs(pnlUnrealized).toFixed(2)}
+          </div>
         </div>
       </div>
 

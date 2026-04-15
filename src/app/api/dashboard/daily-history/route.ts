@@ -15,15 +15,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const indicatorId = searchParams.get("indicatorId");
     const indicatorName = searchParams.get("indicatorName");
-    const days = parseInt(searchParams.get("days") ?? "30");
+    const daysRaw = parseInt(searchParams.get("days") ?? "30", 10);
+    const days = Math.min(Math.max(Number.isFinite(daysRaw) ? daysRaw : 30, 1), 365);
+    const fromDate = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
 
     const db = getSupabase();
     let query = db
       .from("daily_loss_history")
       .select(`
         *,
-        indicators(name)
+        indicators!inner(name)
       `)
+      .gte("date", fromDate)
       .order("date", { ascending: false })
       .limit(days * 6); // max ~6 records per day (6 indicators)
 

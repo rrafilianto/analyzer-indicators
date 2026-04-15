@@ -8,6 +8,7 @@ import { processSignal } from "../../../../engine/position-manager";
 import { PaperTradingEngine } from "../../../../engine/paper-trading-engine";
 import { recalculateMetrics, getAllMetrics } from "../../../../engine/metrics";
 import { checkGlobalRisk, resetDailyLoss, autoResetDailyLoss } from "../../../../engine/risk-manager";
+import { syncIndicatorEquity } from "../../../../engine/equity";
 import { notifyCronFatalError, notifyCronIndicatorError } from "../../../../lib/telegram";
 
 // ==========================================
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
     // Step 2: Fetch candles
     logger.info("Fetching candles from Binance");
     const candles = await fetchCandles("BTCUSDT", "5m", 200);
+    const currentPrice = candles[candles.length - 1]?.close ?? 0;
     logger.info(`Fetched ${candles.length} candles`, { count: candles.length });
 
     // Step 3: Detect market structure
@@ -103,6 +105,9 @@ export async function GET(request: NextRequest) {
         results[indicator.name] = { signal: result.signal, durationMs: Date.now() - start };
 
         await processSignal(indicator.id, result.signal, candles, marketStructure, engine);
+        if (currentPrice > 0) {
+          await syncIndicatorEquity(indicator.id, currentPrice);
+        }
         await recalculateMetrics(indicator.id);
 
         logger.info(`Processed successfully`, { durationMs: Date.now() - start }, indicator.name);

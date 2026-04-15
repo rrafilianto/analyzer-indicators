@@ -52,10 +52,23 @@ export async function recalculateMetrics(indicatorId: string): Promise<void> {
   }
 
   const tradeList = trades as unknown as TradeRow[];
+  const totalPnL = tradeList.reduce((sum, t) => sum + t.pnl, 0);
+
+  // Reconstruct initial equity from current account balance:
+  // initial_equity ~= current_balance - cumulative_pnl
+  // This keeps drawdown anchored to account equity, not raw running PnL.
+  const { data: account } = await getSupabase()
+    .from("accounts")
+    .select("balance")
+    .eq("indicator_id", indicatorId)
+    .single();
+
+  const currentBalance = Number(account?.balance ?? 0);
+  const reconstructedInitialEquity = Math.max(1, currentBalance - totalPnL);
 
   const totalTrades = tradeList.length;
   const { winrate, profitFactor, maxDrawdown } =
-    calculateTradeMetrics(tradeList);
+    calculateTradeMetrics(tradeList, reconstructedInitialEquity);
   const score = calculateScore(winrate, profitFactor, maxDrawdown);
 
   // NUMERIC(5,4) in Postgres: max absolute value is 9.9999.
@@ -79,7 +92,7 @@ export async function recalculateMetrics(indicatorId: string): Promise<void> {
 /**
  * Calculate winrate, profit factor, and max drawdown from a list of trades.
  */
-function calculateTradeMetrics(trades: TradeRow[]): {
+function calculateTradeMetrics(trades: TradeRow[], initialEquity: number): {
   winrate: number;
   profitFactor: number;
   maxDrawdown: number;
@@ -87,13 +100,13 @@ function calculateTradeMetrics(trades: TradeRow[]): {
   let wins = 0;
   let totalProfit = 0;
   let totalLoss = 0;
-  let peakEquity = 0;
+  let peakEquity = initialEquity;
   let maxDrawdown = 0;
-  let runningPnL = 0;
+  let runningEquity = initialEquity;
 
   for (const trade of trades) {
     const pnl = trade.pnl;
-    runningPnL += pnl;
+    runningEquity += pnl;
 
     if (pnl > 0) {
       wins++;
@@ -103,12 +116,13 @@ function calculateTradeMetrics(trades: TradeRow[]): {
     }
 
     // Track peak and drawdown
-    if (runningPnL > peakEquity) {
-      peakEquity = runningPnL;
+    if (runningEquity > peakEquity) {
+      peakEquity = runningEquity;
     }
 
-    const drawdown =
-      peakEquity > 0 ? (peakEquity - runningPnL) / peakEquity : 0;
+    const drawdownRaw =
+      peakEquity > 0 ? (peakEquity - runningEquity) / peakEquity : 0;
+    const drawdown = Math.min(1, Math.max(0, drawdownRaw));
     if (drawdown > maxDrawdown) {
       maxDrawdown = drawdown;
     }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "../../../../lib/supabase";
 import { formatError } from "../../../../lib/error-format";
+import { syncIndicatorEquity } from "../../../../engine/equity";
 
 // ==========================================
 // Dashboard Overview API
@@ -16,6 +17,19 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const db = getSupabase();
+
+    // Fetch latest price for mark-to-market equity.
+    let currentPrice: number | null = null;
+    try {
+      const priceRes = await fetch(
+        "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit=1"
+      );
+      const candles = await priceRes.json();
+      currentPrice = candles?.[0]?.[4] ? parseFloat(candles[0][4]) : null;
+    } catch {
+      // Keep serving dashboard even if price fetch fails.
+      currentPrice = null;
+    }
 
     // Fetch all indicators with accounts and metrics
     const { data: indicators, error: indicatorsError } = await db
@@ -96,13 +110,29 @@ export async function GET() {
       return history;
     }
 
-    const indicatorsList = (indicators || []).map((ind: any) => ({
+    function calculateRealizedPnl(trades: { pnl: number }[]): number {
+      return Math.round(
+        trades.reduce((sum, trade) => sum + trade.pnl, 0) * 100
+      ) / 100;
+    }
+
+    const indicatorsList = await Promise.all((indicators || []).map(async (ind: any) => {
+      let liveEquity = ind.accounts?.equity ?? 0;
+      if (currentPrice && Number.isFinite(currentPrice)) {
+        liveEquity = await syncIndicatorEquity(ind.id, currentPrice);
+      }
+      const balance = ind.accounts?.balance ?? 0;
+      const realizedPnl = calculateRealizedPnl(tradesByIndicator.get(ind.id) ?? []);
+      const unrealizedPnl = Math.round((liveEquity - balance) * 100) / 100;
+      return {
       id: ind.id,
       name: ind.name,
       config: ind.config,
       isActive: ind.is_active,
-      balance: ind.accounts?.balance ?? 0,
-      equity: ind.accounts?.equity ?? 0,
+      balance,
+      equity: liveEquity,
+      pnlRealized: realizedPnl,
+      pnlUnrealized: unrealizedPnl,
       dailyLoss: ind.accounts?.daily_loss ?? 0,
       isHalted: ind.accounts?.is_halted ?? false,
       totalTrades: ind.performance_metrics?.total_trades ?? 0,
@@ -115,6 +145,7 @@ export async function GET() {
         tradesByIndicator.get(ind.id) ?? [],
         ind.accounts?.balance ?? 1000
       ),
+    };
     }));
 
     return NextResponse.json({

@@ -232,7 +232,7 @@ Tujuan:
 * opened_at
 * closed_at
 
-### trades
+### multi_trades
 
 * id
 * position_id

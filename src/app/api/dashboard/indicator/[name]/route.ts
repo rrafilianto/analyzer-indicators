@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "../../../../../lib/supabase";
 import { formatError } from "../../../../../lib/error-format";
+import { syncIndicatorEquity } from "../../../../../engine/equity";
 
 // ==========================================
 // Indicator Detail API
@@ -15,12 +16,18 @@ import { formatError } from "../../../../../lib/error-format";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
   try {
     const { name } = await params;
     const db = getSupabase();
+    const searchParams = request.nextUrl.searchParams;
+    const limit = Math.min(
+      Math.max(parseInt(searchParams.get("limit") ?? "10", 10) || 10, 1),
+      100
+    );
+    const offset = Math.max(parseInt(searchParams.get("offset") ?? "0", 10) || 0, 0);
 
     // Fetch indicator with account and metrics
     const { data: indicator, error: indicatorError } = await db
@@ -47,7 +54,7 @@ export async function GET(
       console.error("[IndicatorDetail] Position fetch error:", posError);
     }
 
-    // Fetch trade history (last 50, newest first)
+    // Fetch trade history (paginated, newest first)
     const { data: trades, error: tradesError } = await db
       .from("multi_trades")
       .select(`
@@ -56,10 +63,23 @@ export async function GET(
       `)
       .eq("positions.indicator_id", indicator.id)
       .order("exited_at", { ascending: false })
-      .limit(50);
+      .range(offset, offset + limit);
 
     if (tradesError) {
       console.error("[IndicatorDetail] Trades fetch error:", tradesError);
+    }
+
+    // Fetch all trade pnl for realized PnL summary
+    const { data: realizedTrades, error: realizedTradesError } = await db
+      .from("multi_trades")
+      .select(`
+        pnl,
+        positions!inner(indicator_id)
+      `)
+      .eq("positions.indicator_id", indicator.id);
+
+    if (realizedTradesError) {
+      console.error("[IndicatorDetail] Realized PnL fetch error:", realizedTradesError);
     }
 
     // Fetch recent candles for current price
@@ -68,9 +88,17 @@ export async function GET(
     );
     const candles = await res.json();
     const currentPrice = candles?.[0]?.[4] ? parseFloat(candles[0][4]) : null;
+    let liveEquity = indicator.accounts?.equity ?? 0;
+    if (currentPrice && Number.isFinite(currentPrice)) {
+      liveEquity = await syncIndicatorEquity(indicator.id, currentPrice);
+    }
 
     // Supabase join returns object (not array) for foreign key relations
-    const tradeList = (trades || []).map((t: any) => ({
+    const allTradeRows = trades || [];
+    const hasMoreTrades = allTradeRows.length > limit;
+    const tradePageRows = hasMoreTrades ? allTradeRows.slice(0, limit) : allTradeRows;
+
+    const tradeList = tradePageRows.map((t: any) => ({
       id: t.id,
       pnl: t.pnl,
       rMultiple: t.r_multiple,
@@ -80,6 +108,11 @@ export async function GET(
       side: t.positions?.side ?? "unknown",
       entryPrice: t.positions?.entry_price ?? 0,
     }));
+    const realizedPnl = (realizedTrades || []).reduce(
+      (sum: number, row: { pnl: number }) => sum + row.pnl,
+      0
+    );
+    const unrealizedPnl = liveEquity - (indicator.accounts?.balance ?? 0);
 
     return NextResponse.json({
       indicator: {
@@ -88,7 +121,7 @@ export async function GET(
         config: indicator.config,
         isActive: indicator.is_active,
         balance: indicator.accounts?.balance ?? 0,
-        equity: indicator.accounts?.equity ?? 0,
+        equity: liveEquity,
         dailyLoss: indicator.accounts?.daily_loss ?? 0,
         isHalted: indicator.accounts?.is_halted ?? false,
         totalTrades: indicator.performance_metrics?.total_trades ?? 0,
@@ -97,9 +130,12 @@ export async function GET(
         maxDrawdown: indicator.performance_metrics?.max_drawdown ?? 0,
         score: indicator.performance_metrics?.score ?? 0,
         metricsUpdatedAt: indicator.performance_metrics?.updated_at,
+        pnlRealized: Math.round(realizedPnl * 100) / 100,
+        pnlUnrealized: Math.round(unrealizedPnl * 100) / 100,
       },
       openPosition: openPosition ?? null,
       trades: tradeList,
+      hasMoreTrades,
       currentPrice,
     });
   } catch (error) {

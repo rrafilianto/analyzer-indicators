@@ -108,7 +108,7 @@ export interface Database {
           closed_at?: string | null
         }
       }
-      trades: {
+      multi_trades: {
         Row: {
           id: string
           position_id: string

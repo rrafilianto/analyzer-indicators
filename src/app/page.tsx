@@ -22,6 +22,8 @@ interface IndicatorData {
   isActive: boolean;
   balance: number;
   equity: number;
+  pnlRealized: number;
+  pnlUnrealized: number;
   dailyLoss: number;
   isHalted: boolean;
   totalTrades: number;
@@ -174,6 +176,8 @@ export default function DashboardPage() {
                 isActive={indicator.isActive}
                 balance={indicator.balance}
                 equity={indicator.equity}
+                pnlRealized={indicator.pnlRealized}
+                pnlUnrealized={indicator.pnlUnrealized}
                 dailyLoss={indicator.dailyLoss}
                 isHalted={indicator.isHalted}
                 totalTrades={indicator.totalTrades}

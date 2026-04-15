@@ -32,6 +32,8 @@ interface IndicatorDetail {
   maxDrawdown: number;
   score: number;
   metricsUpdatedAt: string;
+  pnlRealized: number;
+  pnlUnrealized: number;
 }
 
 interface DetailData {
@@ -47,8 +49,11 @@ interface DetailData {
     opened_at: string;
   } | null;
   trades: Trade[];
+  hasMoreTrades: boolean;
   currentPrice: number | null;
 }
+
+const TRADE_PAGE_SIZE = 10;
 
 const indicatorLabels: Record<string, string> = {
   ema_crossover: "EMA Cross (9/21)",
@@ -67,6 +72,7 @@ export default function IndicatorDetailPage({
   const [name, setName] = useState<string>("");
   const [data, setData] = useState<DetailData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     params.then((p) => setName(p.name));
@@ -76,7 +82,7 @@ export default function IndicatorDetailPage({
     if (!name) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/dashboard/indicator/${name}`, { cache: "no-store" });
+      const res = await fetch(`/api/dashboard/indicator/${name}?limit=${TRADE_PAGE_SIZE}&offset=0`, { cache: "no-store" });
       const json = await res.json();
       setData(json);
     } catch (error) {
@@ -90,6 +96,31 @@ export default function IndicatorDetailPage({
     fetchData();
   }, [fetchData]);
 
+  const loadMoreTrades = useCallback(async () => {
+    if (!name || !data || loadingMore || !data.hasMoreTrades) return;
+    setLoadingMore(true);
+    try {
+      const offset = data.trades.length;
+      const res = await fetch(
+        `/api/dashboard/indicator/${name}?limit=${TRADE_PAGE_SIZE}&offset=${offset}`,
+        { cache: "no-store" }
+      );
+      const json: DetailData = await res.json();
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          trades: [...prev.trades, ...(json.trades || [])],
+          hasMoreTrades: json.hasMoreTrades,
+        };
+      });
+    } catch (error) {
+      console.error("Failed to load more trades:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [name, data, loadingMore]);
+
   if (!name) return null;
 
   const indicator = data?.indicator;
@@ -102,6 +133,10 @@ export default function IndicatorDetailPage({
       : indicator.score >= 0.4
       ? "text-yellow-400"
       : "text-red-400";
+  const drawdownPercent = indicator.maxDrawdown * 100;
+  const drawdownBarWidth = Math.min(Math.max(drawdownPercent, 0), 100);
+  const pnlRealizedColor = indicator.pnlRealized >= 0 ? "text-emerald-400" : "text-red-400";
+  const pnlUnrealizedColor = indicator.pnlUnrealized >= 0 ? "text-emerald-400" : "text-red-400";
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -142,15 +177,25 @@ export default function IndicatorDetailPage({
               <StatCard label="Score" value={indicator.score.toFixed(3)} color={scoreColor} />
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <StatCard label="Total Trades" value={indicator.totalTrades} />
               <StatCard
                 label="Max Drawdown"
-                value={(indicator.maxDrawdown * 100).toFixed(1)}
+                value={drawdownPercent.toFixed(1)}
                 suffix="%"
                 color="text-red-400"
               />
               <StatCard label="Daily Loss" value={`$${indicator.dailyLoss.toFixed(2)}`} />
+              <StatCard
+                label="PnL Realized"
+                value={`${indicator.pnlRealized >= 0 ? "+" : "-"}$${Math.abs(indicator.pnlRealized).toFixed(2)}`}
+                color={pnlRealizedColor}
+              />
+              <StatCard
+                label="PnL Unrealized"
+                value={`${indicator.pnlUnrealized >= 0 ? "+" : "-"}$${Math.abs(indicator.pnlUnrealized).toFixed(2)}`}
+                color={pnlUnrealizedColor}
+              />
             </div>
 
             {/* Progress bars for key metrics */}
@@ -185,12 +230,12 @@ export default function IndicatorDetailPage({
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-500">Drawdown</span>
-                  <span className="text-gray-300">{(indicator.maxDrawdown * 100).toFixed(1)}%</span>
+                  <span className="text-gray-300">{drawdownPercent.toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div
                     className="bg-red-500 h-2 rounded-full transition-all"
-                    style={{ width: `${indicator.maxDrawdown * 100}%` }}
+                    style={{ width: `${drawdownBarWidth}%` }}
                   />
                 </div>
               </div>
@@ -245,6 +290,17 @@ export default function IndicatorDetailPage({
             <div className="bg-gray-800 rounded-lg p-4">
               <div className="text-sm text-gray-400 mb-3">Trade History</div>
               <TradeTable trades={data.trades} />
+              {data.hasMoreTrades && (
+                <div className="mt-3 flex justify-center">
+                  <button
+                    onClick={loadMoreTrades}
+                    disabled={loadingMore}
+                    className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-xs px-3 py-1.5 rounded"
+                  >
+                    {loadingMore ? "Loading..." : "Load more"}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Daily Loss History */}
