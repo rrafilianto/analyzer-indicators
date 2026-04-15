@@ -1,5 +1,5 @@
-import { getSupabase } from "../lib/supabase";
-import { formatError } from "../lib/error-format";
+import { getSupabase } from '../lib/supabase';
+import { formatError } from '../lib/error-format';
 
 // ==========================================
 // Metrics Calculator
@@ -29,13 +29,15 @@ interface TradeRow {
 export async function recalculateMetrics(indicatorId: string): Promise<void> {
   // Fetch all trades for this indicator (via positions)
   const { data: trades } = await getSupabase()
-    .from("multi_trades")
-    .select(`
+    .from('multi_trades')
+    .select(
+      `
       *,
       positions!inner (indicator_id)
-    `)
-    .eq("positions.indicator_id", indicatorId)
-    .order("exited_at", { ascending: true });
+    `,
+    )
+    .eq('positions.indicator_id', indicatorId)
+    .order('exited_at', { ascending: true });
 
   if (!trades || trades.length === 0) {
     // No trades yet — reset metrics
@@ -52,7 +54,8 @@ export async function recalculateMetrics(indicatorId: string): Promise<void> {
   const tradeList = trades as unknown as TradeRow[];
 
   const totalTrades = tradeList.length;
-  const { winrate, profitFactor, maxDrawdown } = calculateTradeMetrics(tradeList);
+  const { winrate, profitFactor, maxDrawdown } =
+    calculateTradeMetrics(tradeList);
   const score = calculateScore(winrate, profitFactor, maxDrawdown);
 
   // NUMERIC(5,4) in Postgres: max absolute value is 9.9999.
@@ -62,14 +65,14 @@ export async function recalculateMetrics(indicatorId: string): Promise<void> {
 
   await upsertMetrics(indicatorId, {
     total_trades: totalTrades,
-    winrate:       clamp(Math.round(winrate       * 10000) / 10000),
-    profit_factor: clamp(Math.round(profitFactor  * 10000) / 10000),
-    max_drawdown:  clamp(Math.round(maxDrawdown   * 10000) / 10000),
-    score:         clamp(Math.round(score         * 10000) / 10000),
+    winrate: clamp(Math.round(winrate * 10000) / 10000),
+    profit_factor: clamp(Math.round(profitFactor * 10000) / 10000),
+    max_drawdown: clamp(Math.round(maxDrawdown * 10000) / 10000),
+    score: clamp(Math.round(score * 10000) / 10000),
   });
 
   console.log(
-    `[Metrics] ${indicatorId}: trades=${totalTrades}, wr=${(winrate * 100).toFixed(1)}%, pf=${profitFactor.toFixed(2)}, dd=${(maxDrawdown * 100).toFixed(1)}%, score=${score.toFixed(3)}`
+    `[Metrics] ${indicatorId}: trades=${totalTrades}, wr=${(winrate * 100).toFixed(1)}%, pf=${profitFactor.toFixed(2)}, dd=${(maxDrawdown * 100).toFixed(1)}%, score=${score.toFixed(3)}`,
   );
 }
 
@@ -104,14 +107,16 @@ function calculateTradeMetrics(trades: TradeRow[]): {
       peakEquity = runningPnL;
     }
 
-    const drawdown = peakEquity > 0 ? (peakEquity - runningPnL) / peakEquity : 0;
+    const drawdown =
+      peakEquity > 0 ? (peakEquity - runningPnL) / peakEquity : 0;
     if (drawdown > maxDrawdown) {
       maxDrawdown = drawdown;
     }
   }
 
   const winrate = trades.length > 0 ? wins / trades.length : 0;
-  const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? Infinity : 0;
+  const profitFactor =
+    totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? Infinity : 0;
 
   // Cap profit factor at a reasonable number for scoring
   const cappedProfitFactor = profitFactor === Infinity ? 10 : profitFactor;
@@ -129,14 +134,15 @@ function calculateTradeMetrics(trades: TradeRow[]): {
  * - Profit Factor: cap at 5, divide by 5 → 0-1
  * - (1 - Drawdown%) is already 0-1
  */
-function calculateScore(winrate: number, profitFactor: number, maxDrawdown: number): number {
+function calculateScore(
+  winrate: number,
+  profitFactor: number,
+  maxDrawdown: number,
+): number {
   const normalizedPF = Math.min(profitFactor, 5) / 5;
   const drawdownComponent = 1 - maxDrawdown;
 
-  const score =
-    winrate * 0.4 +
-    normalizedPF * 0.3 +
-    drawdownComponent * 0.3;
+  const score = winrate * 0.4 + normalizedPF * 0.3 + drawdownComponent * 0.3;
 
   return Math.max(0, Math.min(1, score));
 }
@@ -152,21 +158,24 @@ async function upsertMetrics(
     profit_factor: number;
     max_drawdown: number;
     score: number;
-  }
+  },
 ): Promise<void> {
   const { error } = await getSupabase()
-    .from("performance_metrics")
+    .from('performance_metrics')
     .upsert(
       {
         indicator_id: indicatorId,
         ...metrics,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "indicator_id" }
+      { onConflict: 'indicator_id' },
     );
 
   if (error) {
-    console.error(`[Metrics] Failed to upsert metrics for ${indicatorId}:`, formatError(error, "metrics"));
+    console.error(
+      `[Metrics] Failed to upsert metrics for ${indicatorId}:`,
+      formatError(error, 'metrics'),
+    );
     throw error;
   }
 }
@@ -187,15 +196,20 @@ export async function getAllMetrics(): Promise<
   }>
 > {
   const { data, error } = await getSupabase()
-    .from("performance_metrics")
-    .select(`
+    .from('performance_metrics')
+    .select(
+      `
       *,
       indicators!inner(name)
-    `)
-    .order("score", { ascending: false });
+    `,
+    )
+    .order('score', { ascending: false });
 
   if (error) {
-    console.error("[Metrics] Failed to fetch all metrics:", formatError(error, "metrics"));
+    console.error(
+      '[Metrics] Failed to fetch all metrics:',
+      formatError(error, 'metrics'),
+    );
     return [];
   }
 

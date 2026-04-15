@@ -155,11 +155,22 @@ export async function resetDailyLoss(): Promise<void> {
 
   // ── Build & send daily summary before reset ──────────────────────────────
   try {
-    const todayStart = new Date(
-      Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate())
-    ).toISOString();
+    const now = new Date();
 
-    // Fetch today's closed trades joined with indicator name
+    // At midnight UTC reset, the "day that just ended" is YESTERDAY.
+    // We query from yesterdayStart → todayStart (the full day that completed).
+    const yesterdayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1)
+    ).toISOString(); // e.g. 2026-04-14T00:00:00.000Z
+
+    const todayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    ).toISOString(); // e.g. 2026-04-15T00:00:00.000Z
+
+    // Date label should show the day that just ended (yesterday)
+    const summaryDate = new Date(yesterdayStart).toISOString().split("T")[0]!;
+
+    // Fetch today's (yesterday's) closed trades joined with indicator name
     const { data: todayTrades } = await db
       .from("multi_trades")
       .select(`
@@ -169,7 +180,8 @@ export async function resetDailyLoss(): Promise<void> {
           indicators!inner ( name )
         )
       `)
-      .gte("exited_at", todayStart);
+      .gte("exited_at", yesterdayStart)
+      .lt("exited_at", todayStart);
 
     // Fetch all-time scores per indicator
     const { data: metricsRows } = await db
@@ -224,7 +236,7 @@ export async function resetDailyLoss(): Promise<void> {
     }
 
     await notifyDailySummary({
-      date: todayUTC,
+      date: summaryDate,
       indicators: Array.from(indicatorMap.values()),
     });
   } catch (summaryErr) {
