@@ -69,17 +69,36 @@ export async function GET(
       console.error("[IndicatorDetail] Trades fetch error:", tradesError);
     }
 
-    // Fetch all trade pnl for realized PnL summary
-    const { data: realizedTrades, error: realizedTradesError } = await db
-      .from("multi_trades")
-      .select(`
-        pnl,
-        positions!inner(indicator_id)
-      `)
-      .eq("positions.indicator_id", indicator.id);
+    // Fetch all trades for realized PnL summary and equity history
+    let realizedTrades: any[] = [];
+    let hasMoreRealized = true;
+    let realizedOffset = 0;
+    const PAGE_SIZE = 1000;
 
-    if (realizedTradesError) {
-      console.error("[IndicatorDetail] Realized PnL fetch error:", realizedTradesError);
+    while (hasMoreRealized) {
+      const { data, error } = await db
+        .from("multi_trades")
+        .select(`
+          pnl,
+          exited_at,
+          positions!inner(indicator_id)
+        `)
+        .eq("positions.indicator_id", indicator.id)
+        .order("exited_at", { ascending: true })
+        .range(realizedOffset, realizedOffset + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error("[IndicatorDetail] Realized PnL fetch error:", error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        realizedTrades = realizedTrades.concat(data);
+        realizedOffset += PAGE_SIZE;
+        if (data.length < PAGE_SIZE) hasMoreRealized = false;
+      } else {
+        hasMoreRealized = false;
+      }
     }
 
     // Fetch recent candles for current price
@@ -119,6 +138,27 @@ export async function GET(
     const initialBalance = Math.max(1, balance - realizedPnl);
     const roi = ((liveEquity - initialBalance) / initialBalance) * 100;
 
+    function buildEquityHistory(
+      tradeItems: { pnl: number; exited_at: string }[],
+      initBal: number
+    ): { date: string; equity: number }[] {
+      const history: { date: string; equity: number }[] = [];
+      let running = initBal;
+
+      if (tradeItems.length > 0) {
+        history.push({ date: tradeItems[0].exited_at, equity: initBal });
+      }
+
+      for (const trade of tradeItems) {
+        running += trade.pnl;
+        history.push({ date: trade.exited_at, equity: Math.round(running * 100) / 100 });
+      }
+
+      return history;
+    }
+
+    const equityHistory = buildEquityHistory(realizedTrades || [], initialBalance);
+
     return NextResponse.json({
       indicator: {
         id: indicator.id,
@@ -138,6 +178,7 @@ export async function GET(
         pnlRealized: Math.round(realizedPnl * 100) / 100,
         pnlUnrealized: Math.round(unrealizedPnl * 100) / 100,
         roi,
+        equityHistory,
       },
       openPosition: openPosition ?? null,
       trades: tradeList,

@@ -6,6 +6,7 @@ import { PositionBadge } from "../../../components/PositionBadge";
 import { TradeTable } from "../../../components/TradeTable";
 import { StatCard } from "../../../components/StatCard";
 import { DailyLossHistory } from "../../../components/DailyLossHistory";
+import { EquityChart } from "../../../components/EquityChart";
 
 interface Trade {
   id: string;
@@ -35,6 +36,7 @@ interface IndicatorDetail {
   pnlRealized: number;
   pnlUnrealized: number;
   roi: number;
+  equityHistory: { date: string; equity: number }[];
 }
 
 interface DetailData {
@@ -291,6 +293,11 @@ export default function IndicatorDetailPage({
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Equity Chart */}
+            <div className="mb-6">
+              <EquityChart data={indicator.equityHistory} />
             </div>
 
             {/* Open Position */}

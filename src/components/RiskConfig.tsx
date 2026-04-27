@@ -6,14 +6,16 @@ interface RiskConfigProps {
   maxDailyLoss: number;
   positionSize: number;
   leverage: number;
+  tradingFee: number;
   onSaved: () => void;
 }
 
-export function RiskConfig({ maxDailyLoss, positionSize, leverage, onSaved }: RiskConfigProps) {
+export function RiskConfig({ maxDailyLoss, positionSize, leverage, tradingFee, onSaved }: RiskConfigProps) {
   const [values, setValues] = useState({
     maxDailyLoss: maxDailyLoss.toString(),
     positionSize: positionSize.toString(),
     leverage: leverage.toString(),
+    tradingFee: tradingFee.toString(),
   });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -47,6 +49,14 @@ export function RiskConfig({ maxDailyLoss, positionSize, leverage, onSaved }: Ri
             value: parseInt(values.leverage),
           }),
         }),
+        fetch("/api/dashboard/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_trading_fee",
+            value: parseFloat(values.tradingFee),
+          }),
+        }),
       ]);
       setSaved(true);
       onSaved();
@@ -61,7 +71,7 @@ export function RiskConfig({ maxDailyLoss, positionSize, leverage, onSaved }: Ri
   return (
     <div className="bg-gray-800 rounded-lg p-4">
       <div className="text-sm text-gray-400 mb-3">Risk Configuration</div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <label className="text-xs text-gray-500 uppercase">Max Daily Loss ($)</label>
           <input
@@ -86,6 +96,16 @@ export function RiskConfig({ maxDailyLoss, positionSize, leverage, onSaved }: Ri
             type="number"
             value={values.leverage}
             onChange={(e) => setValues((v) => ({ ...v, leverage: e.target.value }))}
+            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm mt-1 text-white"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 uppercase">Trading Fee (%)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={values.tradingFee}
+            onChange={(e) => setValues((v) => ({ ...v, tradingFee: e.target.value }))}
             className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm mt-1 text-white"
           />
         </div>

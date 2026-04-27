@@ -286,13 +286,22 @@ async function closePositionWithTrade(
   const positionSide: PositionSide = position.side as PositionSide;
   const exitedAt = new Date();
 
+  const { getSupabase } = await import("../lib/supabase");
+  const { data: feeRow } = await getSupabase()
+    .from("system_config")
+    .select("value")
+    .eq("key", "trading_fee")
+    .single();
+  const tradingFee = (feeRow?.value as { value: number })?.value ?? 0.04;
+
   // Calculate PnL
   const pnl = engine.calculatePnL(
     positionSide,
     position.entry_price,
     exitPrice,
     position.size,
-    position.leverage
+    position.leverage,
+    tradingFee
   );
 
   // Calculate R multiple

@@ -371,6 +371,7 @@ export async function getSystemConfig(): Promise<{
   defaultBalance: number;
   positionSize: number;
   leverage: number;
+  tradingFee: number;
 }> {
   const { data: rows } = await getSupabase()
     .from("system_config")
@@ -385,5 +386,6 @@ export async function getSystemConfig(): Promise<{
     defaultBalance: (configMap.get("default_balance") as { value: number })?.value ?? 1000,
     positionSize: (configMap.get("position_size") as { value: number })?.value ?? 5,
     leverage: (configMap.get("leverage") as { value: number })?.value ?? 5,
+    tradingFee: (configMap.get("trading_fee") as { value: number })?.value ?? 0.04,
   };
 }

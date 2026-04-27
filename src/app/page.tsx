@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { IndicatorCard } from "../components/IndicatorCard";
 import { KillSwitch } from "../components/KillSwitch";
 import { RiskConfig } from "../components/RiskConfig";
-import { EquityChart } from "../components/EquityChart";
+import { MultiEquityChart } from "../components/MultiEquityChart";
 import { LogViewer } from "../components/LogViewer";
 
 const INDICATOR_COLORS: Record<string, string> = {
@@ -47,6 +47,7 @@ interface DashboardData {
   maxDailyLoss: number;
   positionSize: number;
   leverage: number;
+  tradingFee: number;
 }
 
 export default function DashboardPage() {
@@ -146,6 +147,9 @@ export default function DashboardPage() {
             <div className="text-xs text-gray-500">
               Leverage: <span className="text-gray-300">{data.leverage}x</span>
             </div>
+            <div className="text-xs text-gray-500">
+              Fee: <span className="text-gray-300">{data.tradingFee}%</span>
+            </div>
           </div>
         )}
 
@@ -155,12 +159,13 @@ export default function DashboardPage() {
             maxDailyLoss={data.maxDailyLoss}
             positionSize={data.positionSize}
             leverage={data.leverage}
+            tradingFee={data.tradingFee}
             onSaved={handleConfigSaved}
           />
         )}
 
         {/* Equity Chart */}
-        <EquityChart datasets={equityDatasets} />
+        <MultiEquityChart datasets={equityDatasets} />
 
         {/* Indicator Cards */}
         {!data ? (

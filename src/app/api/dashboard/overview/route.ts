@@ -180,6 +180,7 @@ export async function GET() {
       maxDailyLoss: (configMap.get("max_daily_loss") as { value?: number })?.value ?? 100,
       positionSize: (configMap.get("position_size") as { value?: number })?.value ?? 5,
       leverage: (configMap.get("leverage") as { value?: number })?.value ?? 5,
+      tradingFee: (configMap.get("trading_fee") as { value?: number })?.value ?? 0.04,
     });
   } catch (error) {
     console.error("[OverviewAPI] Error:", formatError(error, "overview"));

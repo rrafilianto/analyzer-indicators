@@ -71,6 +71,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ status: "success", leverage: value });
       }
 
+      case "update_trading_fee": {
+        const value = assertValidNumber(body.value, "trading_fee");
+        const { error } = await db
+          .from("system_config")
+          .update({ value: { value }, updated_at: new Date().toISOString() })
+          .eq("key", "trading_fee");
+        if (error) throw error;
+        return NextResponse.json({ status: "success", tradingFee: value });
+      }
+
       case "toggle_indicator": {
         const { indicatorId, isActive } = body;
         if (typeof indicatorId !== "string" || indicatorId.length === 0) {
