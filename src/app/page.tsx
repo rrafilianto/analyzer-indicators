@@ -24,6 +24,7 @@ interface IndicatorData {
   equity: number;
   pnlRealized: number;
   pnlUnrealized: number;
+  roi: number;
   dailyLoss: number;
   isHalted: boolean;
   totalTrades: number;
@@ -172,12 +173,14 @@ export default function DashboardPage() {
             {data.indicators.map((indicator) => (
               <IndicatorCard
                 key={indicator.id}
+                id={indicator.id}
                 name={indicator.name}
                 isActive={indicator.isActive}
                 balance={indicator.balance}
                 equity={indicator.equity}
                 pnlRealized={indicator.pnlRealized}
                 pnlUnrealized={indicator.pnlUnrealized}
+                roi={indicator.roi}
                 dailyLoss={indicator.dailyLoss}
                 isHalted={indicator.isHalted}
                 totalTrades={indicator.totalTrades}

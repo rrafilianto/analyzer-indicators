@@ -10,6 +10,7 @@ import {
 } from "../lib/supabase";
 import { getLongStopLoss, getShortStopLoss } from "./market-structure";
 import { formatError } from "../lib/error-format";
+import type { Logger } from "../lib/logger";
 
 // ==========================================
 // Position Manager
@@ -54,7 +55,9 @@ export async function processSignal(
   signal: Signal,
   candles: Candle[],
   marketStructure: MarketStructure,
-  engine: TradingEngine = new PaperTradingEngine()
+  engine: TradingEngine = new PaperTradingEngine(),
+  logger?: Logger,
+  indicatorName?: string
 ): Promise<void> {
   try {
     // Validate candles data
@@ -69,13 +72,13 @@ export async function processSignal(
       console.log(`[PositionManager] ${indicatorId} blocked by risk: ${riskCheck.reason}`);
       // ZOMBIE PREVENTION: We must still monitor existing open positions to enforce SL/TP triggers
       // before blocking normal execution.
-      await checkOpenPosition(indicatorId, candles, engine, marketStructure);
+      await checkOpenPosition(indicatorId, candles, engine, marketStructure, logger, indicatorName);
       return;
     }
 
     if (signal === "NEUTRAL") {
       // Check existing position for TP/SL
-      await checkOpenPosition(indicatorId, candles, engine, marketStructure);
+      await checkOpenPosition(indicatorId, candles, engine, marketStructure, logger, indicatorName);
       return;
     }
 
@@ -83,7 +86,7 @@ export async function processSignal(
 
     if (!openPosition) {
       // No position → try to open new
-      await openNewPosition(indicatorId, signal, candles, marketStructure, engine);
+      await openNewPosition(indicatorId, signal, candles, marketStructure, engine, logger, indicatorName);
     } else {
       // Has open position → check for reverse, TP, SL
       await handleOpenPosition(
@@ -92,7 +95,9 @@ export async function processSignal(
         openPosition,
         candles,
         marketStructure,
-        engine
+        engine,
+        logger,
+        indicatorName
       );
     }
   } catch (error) {
@@ -107,7 +112,9 @@ async function checkOpenPosition(
   indicatorId: string,
   candles: Candle[],
   engine: TradingEngine,
-  marketStructure: MarketStructure
+  marketStructure: MarketStructure,
+  logger?: Logger,
+  indicatorName?: string
 ): Promise<void> {
   const position = await getOpenPosition(indicatorId);
   if (!position) return;
@@ -119,7 +126,7 @@ async function checkOpenPosition(
     (position.side === "long" && currentPrice >= position.take_profit) ||
     (position.side === "short" && currentPrice <= position.take_profit)
   ) {
-    await closePositionWithTrade(position, currentPrice, "tp", engine);
+    await closePositionWithTrade(position, currentPrice, "tp", engine, logger, indicatorName);
     return;
   }
 
@@ -128,7 +135,7 @@ async function checkOpenPosition(
     (position.side === "long" && currentPrice <= position.stop_loss) ||
     (position.side === "short" && currentPrice >= position.stop_loss)
   ) {
-    await closePositionWithTrade(position, currentPrice, "sl", engine);
+    await closePositionWithTrade(position, currentPrice, "sl", engine, logger, indicatorName);
     return;
   }
 
@@ -145,7 +152,9 @@ async function handleOpenPosition(
   position: PositionRecord,
   candles: Candle[],
   marketStructure: MarketStructure,
-  engine: TradingEngine
+  engine: TradingEngine,
+  logger?: Logger,
+  indicatorName?: string
 ): Promise<void> {
   const currentPrice = candles[candles.length - 1]!.close;
   const positionSide: PositionSide = position.side as PositionSide;
@@ -156,7 +165,7 @@ async function handleOpenPosition(
     (positionSide === "long" && currentPrice >= position.take_profit) ||
     (positionSide === "short" && currentPrice <= position.take_profit)
   ) {
-    await closePositionWithTrade(position, currentPrice, "tp", engine);
+    await closePositionWithTrade(position, currentPrice, "tp", engine, logger, indicatorName);
     return;
   }
 
@@ -164,7 +173,7 @@ async function handleOpenPosition(
     (positionSide === "long" && currentPrice <= position.stop_loss) ||
     (positionSide === "short" && currentPrice >= position.stop_loss)
   ) {
-    await closePositionWithTrade(position, currentPrice, "sl", engine);
+    await closePositionWithTrade(position, currentPrice, "sl", engine, logger, indicatorName);
     return;
   }
 
@@ -173,10 +182,10 @@ async function handleOpenPosition(
     console.log(
       `[PositionManager] Reverse signal for ${indicatorId}: ${positionSide} → ${signalSide}`
     );
-    await closePositionWithTrade(position, currentPrice, "reverse", engine);
+    await closePositionWithTrade(position, currentPrice, "reverse", engine, logger, indicatorName);
 
     // Small delay to ensure position is closed
-    await openNewPosition(indicatorId, signal, candles, marketStructure, engine);
+    await openNewPosition(indicatorId, signal, candles, marketStructure, engine, logger, indicatorName);
   }
 
   // Same direction → hold (update trailing SL if applicable)
@@ -191,7 +200,9 @@ async function openNewPosition(
   signal: Signal,
   candles: Candle[],
   marketStructure: MarketStructure,
-  engine: TradingEngine
+  engine: TradingEngine,
+  logger?: Logger,
+  indicatorName?: string
 ): Promise<void> {
   const currentPrice = candles[candles.length - 1]!.close;
 
@@ -252,6 +263,13 @@ async function openNewPosition(
     leverage,
   });
 
+  if (logger) {
+    logger.info(
+      `Opened ${positionSide.toUpperCase()} position @ $${currentPrice.toFixed(2)}`,
+      { side: positionSide, entryPrice: currentPrice, stopLoss, takeProfit, persist: true },
+      indicatorName
+    );
+  }
 }
 
 /**
@@ -261,7 +279,9 @@ async function closePositionWithTrade(
   position: PositionRecord,
   exitPrice: number,
   exitReason: ExitReason,
-  engine: TradingEngine
+  engine: TradingEngine,
+  logger?: Logger,
+  indicatorName?: string
 ): Promise<void> {
   const positionSide: PositionSide = position.side as PositionSide;
   const exitedAt = new Date();
@@ -310,6 +330,13 @@ async function closePositionWithTrade(
     `[PositionManager] Closed ${position.id}: ${exitReason} | PnL: ${pnl.toFixed(2)} | R: ${rMultiple.toFixed(2)}`
   );
 
+  if (logger) {
+    logger.info(
+      `Closed ${position.side.toUpperCase()} position via ${exitReason.toUpperCase()} (PnL: $${pnl.toFixed(2)})`,
+      { exitReason, exitPrice, pnl, rMultiple, duration, persist: true },
+      indicatorName
+    );
+  }
 }
 
 /**

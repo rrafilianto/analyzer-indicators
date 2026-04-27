@@ -241,7 +241,11 @@ async function cmdStatus(chatId: number): Promise<void> {
       const balanceLine = `💰 Balance: <b>$${Number(acc?.balance ?? 0).toFixed(2)}</b> | Equity: $${Number(acc?.equity ?? 0).toFixed(2)}`;
       const realizedPnl = realizedPnlMap.get(ind.id) ?? 0;
       const unrealizedPnl = Number(acc?.equity ?? 0) - Number(acc?.balance ?? 0);
-      const pnlLine = `📊 PnL Rlz/Unrlz: ${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)} / ${unrealizedPnl >= 0 ? "+" : ""}$${unrealizedPnl.toFixed(2)}`;
+      
+      const initialBalance = Math.max(1, Number(acc?.balance ?? 0) - realizedPnl);
+      const roi = (((Number(acc?.equity ?? 0) - initialBalance) / initialBalance) * 100);
+      
+      const pnlLine = `📊 PnL Rlz/Unrlz: ${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)} / ${unrealizedPnl >= 0 ? "+" : ""}$${unrealizedPnl.toFixed(2)} | ROI: <b>${roi >= 0 ? "+" : ""}${roi.toFixed(2)}%</b>`;
       const dailyLossLine = `📉 Daily Loss: $${Number(acc?.daily_loss ?? 0).toFixed(4)}`;
       const metricsLine = `📐 ${met?.total_trades ?? 0} trades | WR: ${(Number(met?.winrate ?? 0) * 100).toFixed(1)}% | Score: ${(Number(met?.score ?? 0) * 100).toFixed(1)}`;
 

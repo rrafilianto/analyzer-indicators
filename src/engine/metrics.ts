@@ -27,17 +27,33 @@ interface TradeRow {
  * Called after each trade is closed.
  */
 export async function recalculateMetrics(indicatorId: string): Promise<void> {
-  // Fetch all trades for this indicator (via positions)
-  const { data: trades } = await getSupabase()
-    .from('multi_trades')
-    .select(
-      `
-      *,
-      positions!inner (indicator_id)
-    `,
-    )
-    .eq('positions.indicator_id', indicatorId)
-    .order('exited_at', { ascending: true });
+  // Fetch all trades for this indicator (via positions) with pagination
+  let trades: any[] = [];
+  let hasMore = true;
+  let offset = 0;
+  const PAGE_SIZE = 1000;
+
+  while (hasMore) {
+    const { data, error } = await getSupabase()
+      .from('multi_trades')
+      .select(`*, positions!inner (indicator_id)`)
+      .eq('positions.indicator_id', indicatorId)
+      .order('exited_at', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) {
+      console.error(`[Metrics] Error fetching trades for ${indicatorId}:`, error);
+      break;
+    }
+
+    if (data && data.length > 0) {
+      trades = trades.concat(data);
+      offset += PAGE_SIZE;
+      if (data.length < PAGE_SIZE) hasMore = false;
+    } else {
+      hasMore = false;
+    }
+  }
 
   if (!trades || trades.length === 0) {
     // No trades yet — reset metrics

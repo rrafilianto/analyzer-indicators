@@ -49,15 +49,36 @@ export async function GET() {
       .select("*")
       .eq("status", "open");
 
-    // Fetch all trades for equity history
-    const { data: allTrades } = await db
-      .from("multi_trades")
-      .select(`
-        pnl,
-        exited_at,
-        positions!inner(indicator_id)
-      `)
-      .order("exited_at", { ascending: true });
+    // Fetch all trades for equity history (with pagination to bypass 1000 limit)
+    let allTrades: any[] = [];
+    let hasMoreTrades = true;
+    let offset = 0;
+    const PAGE_SIZE = 1000;
+
+    while (hasMoreTrades) {
+      const { data, error } = await db
+        .from("multi_trades")
+        .select(`
+          pnl,
+          exited_at,
+          positions!inner(indicator_id)
+        `)
+        .order("exited_at", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error("Error fetching trades for overview:", error);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allTrades = allTrades.concat(data);
+        offset += PAGE_SIZE;
+        if (data.length < PAGE_SIZE) hasMoreTrades = false;
+      } else {
+        hasMoreTrades = false;
+      }
+    }
 
     // Fetch system config
     const { data: configRows } = await db
@@ -124,6 +145,10 @@ export async function GET() {
       const balance = ind.accounts?.balance ?? 0;
       const realizedPnl = calculateRealizedPnl(tradesByIndicator.get(ind.id) ?? []);
       const unrealizedPnl = Math.round((liveEquity - balance) * 100) / 100;
+      
+      const initialBalance = Math.max(1, balance - realizedPnl);
+      const roi = ((liveEquity - initialBalance) / initialBalance) * 100;
+
       return {
       id: ind.id,
       name: ind.name,
@@ -133,6 +158,7 @@ export async function GET() {
       equity: liveEquity,
       pnlRealized: realizedPnl,
       pnlUnrealized: unrealizedPnl,
+      roi,
       dailyLoss: ind.accounts?.daily_loss ?? 0,
       isHalted: ind.accounts?.is_halted ?? false,
       totalTrades: ind.performance_metrics?.total_trades ?? 0,

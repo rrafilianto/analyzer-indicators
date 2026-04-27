@@ -87,15 +87,17 @@ export class Logger {
   }
 
   /**
-   * Persist all collected log entries to Supabase.
+   * Persist collected log entries to Supabase.
+   * Only persists entries with level "error" or context.persist === true.
    * Called at end of cron execution.
    */
   async flush(): Promise<void> {
-    if (this.entries.length === 0) return;
+    const toPersist = this.entries.filter(e => e.level === "error" || e.context?.persist === true);
+    if (toPersist.length === 0) return;
 
     try {
       const db = getSupabase();
-      const rows = this.entries.map((e) => ({
+      const rows = toPersist.map((e) => ({
         request_id: e.requestId,
         level: e.level,
         indicator_name: e.indicator ?? null,

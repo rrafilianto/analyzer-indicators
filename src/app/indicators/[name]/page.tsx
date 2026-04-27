@@ -34,6 +34,7 @@ interface IndicatorDetail {
   metricsUpdatedAt: string;
   pnlRealized: number;
   pnlUnrealized: number;
+  roi: number;
 }
 
 interface DetailData {
@@ -121,6 +122,29 @@ export default function IndicatorDetailPage({
     }
   }, [name, data, loadingMore]);
 
+  const handleToggle = async (indicatorId: string, isActive: boolean) => {
+    try {
+      await fetch("/api/dashboard/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle_indicator", indicatorId, isActive }),
+      });
+      // Update local state
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          indicator: {
+            ...prev.indicator,
+            isActive,
+          },
+        };
+      });
+    } catch (error) {
+      console.error("Failed to toggle indicator:", error);
+    }
+  };
+
   if (!name) return null;
 
   const indicator = data?.indicator;
@@ -151,13 +175,35 @@ export default function IndicatorDetailPage({
               {indicatorLabels[name] ?? name}
             </h1>
           </div>
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm px-4 py-2 rounded"
-          >
-            {loading ? "Loading..." : "Refresh"}
-          </button>
+          <div className="flex items-center gap-3">
+            {indicator && (
+              <div className="flex items-center gap-3 bg-gray-800/80 px-3 py-1.5 rounded border border-gray-700">
+                <span className={`text-xs font-semibold ${indicator.isActive ? 'text-emerald-400' : 'text-gray-500'}`}>
+                  {indicator.isActive ? 'ACTIVE' : 'HALTED'}
+                </span>
+                <button
+                  onClick={() => handleToggle(indicator.id, !indicator.isActive)}
+                  title={indicator.isActive ? "Halt Indicator" : "Activate Indicator"}
+                  className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none cursor-pointer ${
+                    indicator.isActive ? "bg-emerald-600" : "bg-gray-600"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${
+                      indicator.isActive ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-sm px-4 py-2 rounded"
+            >
+              {loading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -174,10 +220,10 @@ export default function IndicatorDetailPage({
               <StatCard label="Equity" value={`$${indicator.equity.toFixed(2)}`} />
               <StatCard label="Winrate" value={(indicator.winrate * 100).toFixed(1)} suffix="%" />
               <StatCard label="Profit Factor" value={indicator.profitFactor.toFixed(2)} />
-              <StatCard label="Score" value={indicator.score.toFixed(3)} color={scoreColor} />
+              <StatCard label="Score" value={(indicator.score * 100).toFixed(1)} color={scoreColor} />
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
               <StatCard label="Total Trades" value={indicator.totalTrades} />
               <StatCard
                 label="Max Drawdown"
@@ -187,14 +233,20 @@ export default function IndicatorDetailPage({
               />
               <StatCard label="Daily Loss" value={`$${indicator.dailyLoss.toFixed(2)}`} />
               <StatCard
-                label="PnL Realized"
+                label="PnL Rlz"
                 value={`${indicator.pnlRealized >= 0 ? "+" : "-"}$${Math.abs(indicator.pnlRealized).toFixed(2)}`}
                 color={pnlRealizedColor}
               />
               <StatCard
-                label="PnL Unrealized"
+                label="PnL Unrlz"
                 value={`${indicator.pnlUnrealized >= 0 ? "+" : "-"}$${Math.abs(indicator.pnlUnrealized).toFixed(2)}`}
                 color={pnlUnrealizedColor}
+              />
+              <StatCard
+                label="ROI"
+                value={`${indicator.roi >= 0 ? "+" : ""}${indicator.roi.toFixed(2)}`}
+                suffix="%"
+                color={indicator.roi >= 0 ? "text-emerald-400" : "text-red-400"}
               />
             </div>
 
@@ -216,7 +268,7 @@ export default function IndicatorDetailPage({
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-500">Score</span>
-                  <span className="text-gray-300">{indicator.score.toFixed(3)}</span>
+                  <span className="text-gray-300">{(indicator.score * 100).toFixed(1)}</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div

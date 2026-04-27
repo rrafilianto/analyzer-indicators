@@ -108,11 +108,16 @@ export async function GET(
       side: t.positions?.side ?? "unknown",
       entryPrice: t.positions?.entry_price ?? 0,
     }));
-    const realizedPnl = (realizedTrades || []).reduce(
+    const realizedPnlRaw = (realizedTrades || []).reduce(
       (sum: number, row: { pnl: number }) => sum + row.pnl,
       0
     );
-    const unrealizedPnl = liveEquity - (indicator.accounts?.balance ?? 0);
+    const realizedPnl = Math.round(realizedPnlRaw * 100) / 100;
+    const balance = indicator.accounts?.balance ?? 0;
+    const unrealizedPnl = Math.round((liveEquity - balance) * 100) / 100;
+    
+    const initialBalance = Math.max(1, balance - realizedPnl);
+    const roi = ((liveEquity - initialBalance) / initialBalance) * 100;
 
     return NextResponse.json({
       indicator: {
@@ -120,7 +125,7 @@ export async function GET(
         name: indicator.name,
         config: indicator.config,
         isActive: indicator.is_active,
-        balance: indicator.accounts?.balance ?? 0,
+        balance,
         equity: liveEquity,
         dailyLoss: indicator.accounts?.daily_loss ?? 0,
         isHalted: indicator.accounts?.is_halted ?? false,
@@ -132,6 +137,7 @@ export async function GET(
         metricsUpdatedAt: indicator.performance_metrics?.updated_at,
         pnlRealized: Math.round(realizedPnl * 100) / 100,
         pnlUnrealized: Math.round(unrealizedPnl * 100) / 100,
+        roi,
       },
       openPosition: openPosition ?? null,
       trades: tradeList,

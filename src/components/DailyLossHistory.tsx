@@ -88,6 +88,7 @@ export function DailyLossHistory({ indicatorName }: { indicatorName?: string }) 
             <tr className="border-b border-gray-700 text-gray-500">
               <th className="text-left py-2 px-2">Date</th>
               {indicatorName ? null : <th className="text-left py-2 px-2">Indicator</th>}
+              <th className="text-right py-2 px-2">Daily Profit</th>
               <th className="text-right py-2 px-2">Daily Loss</th>
               <th className="text-right py-2 px-2">Daily PnL</th>
               <th className="text-right py-2 px-2">Balance</th>
@@ -108,6 +109,9 @@ export function DailyLossHistory({ indicatorName }: { indicatorName?: string }) 
                     <span className="text-gray-300">{entry.indicatorName}</span>
                   </td>
                 )}
+                <td className={`text-right py-2 px-2 font-mono ${(entry.dailyPnl + entry.dailyLoss) > 0 ? "text-emerald-400" : "text-gray-600"}`}>
+                  {(entry.dailyPnl + entry.dailyLoss) > 0 ? `+$${(entry.dailyPnl + entry.dailyLoss).toFixed(2)}` : "—"}
+                </td>
                 <td className={`text-right py-2 px-2 font-mono ${entry.dailyLoss > 0 ? "text-red-400" : "text-gray-600"}`}>
                   {entry.dailyLoss > 0 ? `-$${entry.dailyLoss.toFixed(2)}` : "—"}
                 </td>

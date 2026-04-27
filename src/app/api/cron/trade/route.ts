@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
         logger.info(`Signal: ${result.signal}`, { signal: result.signal }, indicator.name);
         results[indicator.name] = { signal: result.signal, durationMs: Date.now() - start };
 
-        await processSignal(indicator.id, result.signal, candles, marketStructure, engine);
+        await processSignal(indicator.id, result.signal, candles, marketStructure, engine, logger, indicator.name);
         if (currentPrice > 0) {
           await syncIndicatorEquity(indicator.id, currentPrice);
         }

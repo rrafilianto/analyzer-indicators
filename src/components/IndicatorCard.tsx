@@ -4,12 +4,14 @@ import Link from "next/link";
 import { PositionBadge } from "./PositionBadge";
 
 interface IndicatorCardProps {
+  id: string;
   name: string;
   isActive: boolean;
   balance: number;
   equity: number;
   pnlRealized: number;
   pnlUnrealized: number;
+  roi: number;
   dailyLoss: number;
   isHalted: boolean;
   totalTrades: number;
@@ -34,12 +36,14 @@ const indicatorLabels: Record<string, string> = {
 };
 
 export function IndicatorCard({
+  id,
   name,
   isActive,
   balance,
   equity,
   pnlRealized,
   pnlUnrealized,
+  roi,
   dailyLoss,
   isHalted,
   totalTrades,
@@ -66,16 +70,24 @@ export function IndicatorCard({
             {indicatorLabels[name] ?? name}
           </h3>
         </Link>
-        <button
-          onClick={() => onToggle(name, !isActive)}
-          className={`text-xs px-2 py-0.5 rounded ${
-            isActive
-              ? "bg-emerald-900 text-emerald-400"
-              : "bg-gray-700 text-gray-400"
-          }`}
-        >
-          {isActive ? "ON" : "OFF"}
-        </button>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-semibold ${isActive ? 'text-emerald-400' : 'text-gray-500'}`}>
+            {isActive ? 'ACTIVE' : 'HALTED'}
+          </span>
+          <button
+            onClick={() => onToggle(id, !isActive)}
+            title={isActive ? "Halt Indicator" : "Activate Indicator"}
+            className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none cursor-pointer ${
+              isActive ? "bg-emerald-600" : "bg-gray-600"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${
+                isActive ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Balance & Equity */}
@@ -90,18 +102,24 @@ export function IndicatorCard({
         </div>
       </div>
 
-      {/* PnL */}
-      <div className="grid grid-cols-2 gap-3 mb-3">
+      {/* PnL & ROI */}
+      <div className="grid grid-cols-3 gap-3 mb-3">
         <div>
-          <div className="text-xs text-gray-500">PnL Realized</div>
+          <div className="text-xs text-gray-500">PnL Rlz</div>
           <div className={`text-sm font-mono ${pnlRealizedColor}`}>
             {pnlRealized >= 0 ? "+" : "-"}${Math.abs(pnlRealized).toFixed(2)}
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">PnL Unrealized</div>
+          <div className="text-xs text-gray-500">PnL Unrlz</div>
           <div className={`text-sm font-mono ${pnlUnrealizedColor}`}>
             {pnlUnrealized >= 0 ? "+" : "-"}${Math.abs(pnlUnrealized).toFixed(2)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500">ROI</div>
+          <div className={`text-sm font-mono ${roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {roi >= 0 ? "+" : ""}{roi.toFixed(2)}%
           </div>
         </div>
       </div>
@@ -118,7 +136,7 @@ export function IndicatorCard({
         </div>
         <div>
           <span className="text-gray-500">Score</span>
-          <div className={`font-mono font-bold ${scoreColor}`}>{score.toFixed(3)}</div>
+          <div className={`font-mono font-bold ${scoreColor}`}>{(score * 100).toFixed(1)}</div>
         </div>
       </div>
 
