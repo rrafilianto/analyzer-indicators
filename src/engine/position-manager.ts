@@ -119,23 +119,32 @@ async function checkOpenPosition(
   const position = await getOpenPosition(indicatorId);
   if (!position) return;
 
-  const currentPrice = candles[candles.length - 1]!.close;
+  const lastCandle = candles[candles.length - 1]!;
+  const high = lastCandle.high;
+  const low = lastCandle.low;
+  const positionSide: PositionSide = position.side as PositionSide;
+  const slippageBps = 0.0005;
 
-  // Check TP hit
-  if (
-    (position.side === "long" && currentPrice >= position.take_profit) ||
-    (position.side === "short" && currentPrice <= position.take_profit)
-  ) {
-    await closePositionWithTrade(position, currentPrice, "tp", engine, logger, indicatorName);
+  // Check SL first (pessimistic approach)
+  const isSlHit = 
+    (positionSide === "long" && low <= position.stop_loss) ||
+    (positionSide === "short" && high >= position.stop_loss);
+
+  if (isSlHit) {
+    const slExecutionPrice = positionSide === "long"
+      ? position.stop_loss * (1 - slippageBps)
+      : position.stop_loss * (1 + slippageBps);
+    await closePositionWithTrade(position, slExecutionPrice, "sl", engine, logger, indicatorName);
     return;
   }
 
-  // Check SL hit
-  if (
-    (position.side === "long" && currentPrice <= position.stop_loss) ||
-    (position.side === "short" && currentPrice >= position.stop_loss)
-  ) {
-    await closePositionWithTrade(position, currentPrice, "sl", engine, logger, indicatorName);
+  // Check TP hit
+  const isTpHit =
+    (positionSide === "long" && high >= position.take_profit) ||
+    (positionSide === "short" && low <= position.take_profit);
+
+  if (isTpHit) {
+    await closePositionWithTrade(position, position.take_profit, "tp", engine, logger, indicatorName);
     return;
   }
 
@@ -143,9 +152,6 @@ async function checkOpenPosition(
   await updateTrailingStopLoss(position, marketStructure);
 }
 
-/**
- * Handle an open position when a new signal appears.
- */
 async function handleOpenPosition(
   indicatorId: string,
   signal: Signal,
@@ -156,36 +162,57 @@ async function handleOpenPosition(
   logger?: Logger,
   indicatorName?: string
 ): Promise<void> {
-  const currentPrice = candles[candles.length - 1]!.close;
+  const lastCandle = candles[candles.length - 1]!;
+  const currentPrice = lastCandle.close;
+  const high = lastCandle.high;
+  const low = lastCandle.low;
   const positionSide: PositionSide = position.side as PositionSide;
   const signalSide: PositionSide = signal === "LONG" ? "long" : "short";
 
-  // Check TP/SL first
-  if (
-    (positionSide === "long" && currentPrice >= position.take_profit) ||
-    (positionSide === "short" && currentPrice <= position.take_profit)
-  ) {
-    await closePositionWithTrade(position, currentPrice, "tp", engine, logger, indicatorName);
+  // Slippage settings (0.05%)
+  const slippageBps = 0.0005;
+
+  // 1. Check SL First (Pessimistic approach: if both TP & SL hit in same candle, assume SL hit first)
+  const isSlHit = 
+    (positionSide === "long" && low <= position.stop_loss) ||
+    (positionSide === "short" && high >= position.stop_loss);
+
+  if (isSlHit) {
+    // Stop-Market Order: Executes at SL price with slippage
+    const slExecutionPrice = positionSide === "long"
+      ? position.stop_loss * (1 - slippageBps)
+      : position.stop_loss * (1 + slippageBps);
+      
+    await closePositionWithTrade(position, slExecutionPrice, "sl", engine, logger, indicatorName);
     return;
   }
 
-  if (
-    (positionSide === "long" && currentPrice <= position.stop_loss) ||
-    (positionSide === "short" && currentPrice >= position.stop_loss)
-  ) {
-    await closePositionWithTrade(position, currentPrice, "sl", engine, logger, indicatorName);
+  // 2. Check TP
+  const isTpHit =
+    (positionSide === "long" && high >= position.take_profit) ||
+    (positionSide === "short" && low <= position.take_profit);
+
+  if (isTpHit) {
+    // Limit Order: Executes EXACTLY at TP price (no slippage)
+    await closePositionWithTrade(position, position.take_profit, "tp", engine, logger, indicatorName);
     return;
   }
 
-  // Reverse signal: close old + open new
-  if (positionSide !== signalSide) {
+  // 3. Reverse signal: close old + open new
+  if (signal !== "NEUTRAL" && positionSide !== signalSide) {
     console.log(
       `[PositionManager] Reverse signal for ${indicatorId}: ${positionSide} → ${signalSide}`
     );
-    await closePositionWithTrade(position, currentPrice, "reverse", engine, logger, indicatorName);
+    // Market Order at candle close, with slippage
+    const reverseExecutionPrice = positionSide === "long"
+      ? currentPrice * (1 - slippageBps)
+      : currentPrice * (1 + slippageBps);
+
+    await closePositionWithTrade(position, reverseExecutionPrice, "reverse", engine, logger, indicatorName);
 
     // Small delay to ensure position is closed
     await openNewPosition(indicatorId, signal, candles, marketStructure, engine, logger, indicatorName);
+    return;
   }
 
   // Same direction → hold (update trailing SL if applicable)
