@@ -419,3 +419,21 @@ export async function notifyKillSwitch(enabled: boolean, reason?: string, trigge
 
   await sendMessage(text);
 }
+
+// ==========================================
+// Account Halted Notification
+// ==========================================
+
+export async function notifyAccountHalted(indicatorId: string, reason: string): Promise<void> {
+  const indicatorEmoji = INDICATOR_EMOJI[indicatorId] ?? "📊";
+  const text = [
+    `⚠️ <b>INDICATOR HALTED</b> ⚠️`,
+    ``,
+    `${indicatorEmoji} <b>${formatIndicatorName(indicatorId)}</b> telah dihentikan (Halted).`,
+    `<b>Alasan:</b> ${reason}`,
+    ``,
+    `<i>Indikator ini tidak akan membuka posisi baru hari ini. Indikator lain tetap berjalan normal.</i>`
+  ].join("\n");
+
+  await sendMessage(text);
+}

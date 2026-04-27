@@ -1,6 +1,6 @@
 import { getSupabase } from "../lib/supabase";
 import { formatError } from "../lib/error-format";
-import { notifyDailySummary, notifyKillSwitch } from "../lib/telegram";
+import { notifyDailySummary, notifyKillSwitch, notifyAccountHalted } from "../lib/telegram";
 
 // ==========================================
 // Risk Manager
@@ -39,7 +39,8 @@ export async function checkIndicatorRisk(indicatorId: string): Promise<RiskStatu
 
 /**
  * Check global risk: kill switch + max daily loss.
- * Returns false if all trading must stop.
+ * Returns false if all trading must stop due to global kill switch.
+ * If an individual indicator hits max daily loss, it halts the indicator but does NOT trigger global kill switch.
  */
 export async function checkGlobalRisk(): Promise<RiskStatus> {
   // Check kill switch
@@ -53,7 +54,7 @@ export async function checkGlobalRisk(): Promise<RiskStatus> {
     return { canTrade: false, reason: "Kill switch is active" };
   }
 
-  // Check max daily loss
+  // Check max daily loss for individual indicators
   const { data: maxDailyLossConfig } = await getSupabase()
     .from("system_config")
     .select("value")
@@ -63,30 +64,23 @@ export async function checkGlobalRisk(): Promise<RiskStatus> {
   if (maxDailyLossConfig) {
     const maxLoss = (maxDailyLossConfig.value as { value: number }).value;
 
-    // Check if ANY account has hit the daily loss limit
     const { data: accounts } = await getSupabase()
       .from("accounts")
-      .select("indicator_id, daily_loss");
+      .select("indicator_id, daily_loss, is_halted");
 
     if (accounts) {
       for (const account of accounts) {
-        if (account.daily_loss >= maxLoss) {
+        // Only halt if it hasn't been halted already
+        if (account.daily_loss >= maxLoss && !account.is_halted) {
           const reason = `Max daily loss reached oleh indikator ${account.indicator_id} ($${account.daily_loss.toFixed(2)} >= $${maxLoss})`;
           
-          // Auto-trigger global kill switch in DB
-          const db = getSupabase();
-          await db
-            .from("system_config")
-            .update({ value: { enabled: true, reason } })
-            .eq("key", "kill_switch");
+          // Halt this specific account in the DB
+          await haltAccount(account.indicator_id);
             
-          // Dispatch Telegram notification (fire-and-forget)
-          notifyKillSwitch(true, reason, false).catch(() => {});
-
-          return {
-            canTrade: false,
-            reason,
-          };
+          // Dispatch Telegram notification
+          notifyAccountHalted(account.indicator_id, reason).catch(() => {});
+          
+          // Note: We don't return false here! Global trading is still allowed for other indicators.
         }
       }
     }
