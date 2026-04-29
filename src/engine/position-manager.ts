@@ -280,6 +280,18 @@ async function openNewPosition(
   // Get config
   const { positionSize, leverage } = await getSystemConfigValues();
 
+  // Get account to check balance
+  const { getAccount } = await import("../lib/supabase");
+  const account = await getAccount(indicatorId);
+  
+  if (account.balance < positionSize) {
+    console.warn(`[PositionManager] Insufficient balance for ${indicatorId}: $${account.balance.toFixed(2)} < $${positionSize}. Cannot open position.`);
+    if (logger) {
+      logger.warn(`Insufficient balance: $${account.balance.toFixed(2)} (requires $${positionSize})`, undefined, indicatorName);
+    }
+    return;
+  }
+
   await engine.openPosition({
     indicatorId,
     side: positionSide,

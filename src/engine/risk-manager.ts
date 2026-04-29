@@ -22,7 +22,7 @@ interface RiskStatus {
 export async function checkIndicatorRisk(indicatorId: string): Promise<RiskStatus> {
   const { data: account, error } = await getSupabase()
     .from("accounts")
-    .select("is_halted")
+    .select("is_halted, balance")
     .eq("indicator_id", indicatorId)
     .single();
 
@@ -32,6 +32,19 @@ export async function checkIndicatorRisk(indicatorId: string): Promise<RiskStatu
 
   if (account.is_halted) {
     return { canTrade: false, reason: "Account is halted" };
+  }
+
+  // Check for insufficient balance
+  const { data: positionSizeConfig } = await getSupabase()
+    .from("system_config")
+    .select("value")
+    .eq("key", "position_size")
+    .single();
+    
+  const positionSize = (positionSizeConfig?.value as { value: number })?.value ?? 5;
+
+  if (account.balance < positionSize) {
+    return { canTrade: false, reason: `Insufficient balance ($${account.balance.toFixed(2)} < $${positionSize})` };
   }
 
   return { canTrade: true, reason: null };
