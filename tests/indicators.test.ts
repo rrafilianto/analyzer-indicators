@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   emaCrossover,
   macd,
+  supertrend,
   rsi7030,
   rsi50Cross,
   bollingerBands,
@@ -52,6 +53,16 @@ describe("Indicators — return format", () => {
     const result = bollingerBands(candles);
     expect(["LONG", "SHORT", "NEUTRAL"]).toContain(result.signal);
   });
+
+  it("supertrend returns valid signal", () => {
+    const result = supertrend(candles);
+    expect(["LONG", "SHORT", "NEUTRAL"]).toContain(result.signal);
+    expect(result.metadata).toBeDefined();
+    if (result.metadata) {
+      expect(result.metadata).toHaveProperty("supertrend");
+      expect(result.metadata).toHaveProperty("trend");
+    }
+  });
 });
 
 describe("Indicators — edge cases", () => {
@@ -62,6 +73,7 @@ describe("Indicators — edge cases", () => {
     expect(rsi7030(fewCandles).signal).toBe("NEUTRAL");
     expect(rsi50Cross(fewCandles).signal).toBe("NEUTRAL");
     expect(bollingerBands(fewCandles).signal).toBe("NEUTRAL");
+    expect(supertrend(fewCandles).signal).toBe("NEUTRAL");
   });
 
   it("all indicators return NEUTRAL with 1 candle", () => {
@@ -71,6 +83,7 @@ describe("Indicators — edge cases", () => {
     expect(rsi7030(oneCandle).signal).toBe("NEUTRAL");
     expect(rsi50Cross(oneCandle).signal).toBe("NEUTRAL");
     expect(bollingerBands(oneCandle).signal).toBe("NEUTRAL");
+    expect(supertrend(oneCandle).signal).toBe("NEUTRAL");
   });
 
   it("all indicators return NEUTRAL with flat data", () => {
@@ -112,5 +125,59 @@ describe("RSI 70/30", () => {
     const candles = generateCandles(closes);
     const result = rsi7030(candles);
     expect(result.signal).toBe("SHORT");
+  });
+});
+
+describe("Supertrend — directional", () => {
+  it("detects LONG when trend changes from down to up", () => {
+    // Build price series where trend changes to UP on the very last candle
+    const closes: number[] = [];
+    // Enough candles for ATR + establish downtrend
+    // ATR period = 10, need ~15+ for trend establishment, then reversal on last candle
+    const totalCandles = 35;
+
+    // First 34 candles: downtrend (80000 down to 60000)
+    for (let i = 0; i < totalCandles - 1; i++) {
+      closes.push(80000 - i * 600);
+    }
+
+    // Last candle: sharp rise to trigger trend change (from down to up)
+    // Need close > finalUpper of previous candle
+    const lastPrice = 90000; // Sharp rise
+    closes.push(lastPrice);
+
+    const candles = generateCandles(closes);
+    const result = supertrend(candles);
+    expect(result.signal).toBe("LONG");
+    expect(result.metadata?.trend).toBe("UP");
+  });
+
+  it("detects SHORT when trend changes from up to down", () => {
+    // Build price series where trend changes to DOWN on the very last candle
+    const closes: number[] = [];
+    const totalCandles = 35;
+
+    // First 34 candles: uptrend (80000 up to 100000)
+    for (let i = 0; i < totalCandles - 1; i++) {
+      closes.push(80000 + i * 600);
+    }
+
+    // Last candle: sharp drop to trigger trend change (from up to down)
+    const lastPrice = 70000; // Sharp drop
+    closes.push(lastPrice);
+
+    const candles = generateCandles(closes);
+    const result = supertrend(candles);
+    expect(result.signal).toBe("SHORT");
+    expect(result.metadata?.trend).toBe("DOWN");
+  });
+
+  it("returns NEUTRAL when trend does not change", () => {
+    // Sustained uptrend without reversal
+    const closes = Array.from({ length: 50 }, (_, i) => 80000 + i * 50);
+    const candles = generateCandles(closes);
+    const result = supertrend(candles);
+    // No trend change, should be NEUTRAL
+    expect(result.signal).toBe("NEUTRAL");
   });
 });

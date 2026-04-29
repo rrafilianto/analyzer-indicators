@@ -38,7 +38,7 @@ export class PaperTradingEngine implements TradingEngine {
     exitPrice: number,
     size: number,
     leverage: number,
-    tradingFee: number
+    tradingFee: number = 0
   ): number {
     if (!entryPrice || entryPrice <= 0) return 0;
 
@@ -48,7 +48,12 @@ export class PaperTradingEngine implements TradingEngine {
 
     // Percentage return × notional value
     const grossPnl = (priceDiff / entryPrice) * size * leverage;
-    
+
+    // If trading fee is 0 or not provided, skip fee calculation
+    if (tradingFee === 0) {
+      return grossPnl;
+    }
+
     // Trading fee is typically charged on the notional value of both entry and exit.
     // For simplicity, we apply (tradingFee / 100) * (entryNotional + exitNotional).
     const notionalEntry = size * leverage;

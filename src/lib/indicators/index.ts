@@ -92,6 +92,11 @@ export function supertrend(
   const atrPeriod = 10;
   const multiplier = 3;
 
+  // Need at least atrPeriod + 2 candles for ATR + trend change detection
+  if (candles.length < atrPeriod + 2) {
+    return { signal: "NEUTRAL" };
+  }
+
   const atrValues = ATR.calculate({
     period: atrPeriod,
     high: candles.map((c) => c.high),
@@ -99,52 +104,117 @@ export function supertrend(
     close: candles.map((c) => c.close),
   });
 
-  if (atrValues.length < 1) {
+  // ATR values from technicalindicators start from candle index atrPeriod
+  // atrValues[i] corresponds to candles[atrPeriod + i]
+  // Length is candles.length - atrPeriod (not candles.length - atrPeriod + 1)
+
+  const basicUpper: number[] = [];
+  const basicLower: number[] = [];
+  const finalUpper: number[] = [];
+  const finalLower: number[] = [];
+  const isUptrend: boolean[] = [];
+
+  // Calculate Basic Bands
+  // atrValues[i] corresponds to candles[atrPeriod + i]
+  for (let i = 0; i < atrValues.length; i++) {
+    const candleIndex = atrPeriod + i;
+    const hl2 = (candles[candleIndex]!.high + candles[candleIndex]!.low) / 2;
+    const atr = atrValues[i]!;
+
+    basicUpper.push(hl2 + multiplier * atr);
+    basicLower.push(hl2 - multiplier * atr);
+  }
+
+  // Calculate Final Bands and Trend
+  // atrValues[i] corresponds to candles[atrPeriod + i]
+  for (let i = 0; i < basicUpper.length; i++) {
+    const candleIndex = atrPeriod + i;
+
+    if (i === 0) {
+      // Initialize first values
+      finalUpper.push(basicUpper[i]!);
+      finalLower.push(basicLower[i]!);
+      // Initial trend: uptrend if close >= finalLower
+      isUptrend.push(candles[candleIndex]!.close >= finalLower[0]!);
+    } else {
+      const prevClose = candles[candleIndex - 1]!.close;
+
+      // Final Upper Band
+      if (basicUpper[i]! < finalUpper[i - 1]! || prevClose > finalUpper[i - 1]!) {
+        finalUpper.push(basicUpper[i]!);
+      } else {
+        finalUpper.push(finalUpper[i - 1]!);
+      }
+
+      // Final Lower Band
+      if (basicLower[i]! > finalLower[i - 1]! || prevClose < finalLower[i - 1]!) {
+        finalLower.push(basicLower[i]!);
+      } else {
+        finalLower.push(finalLower[i - 1]!);
+      }
+
+      // Trend determination
+      const currentClose = candles[candleIndex]!.close;
+      if (isUptrend[i - 1]!) {
+        // Was uptrend: continue if close >= finalLower, switch if close < finalLower
+        isUptrend.push(currentClose >= finalLower[i]!);
+      } else {
+        // Was downtrend: continue if close <= finalUpper, switch if close > finalUpper
+        isUptrend.push(currentClose > finalUpper[i]!);
+      }
+    }
+  }
+
+  // Need at least 2 trend values to detect a change
+  if (isUptrend.length < 2) {
     return { signal: "NEUTRAL" };
   }
 
-  // Calculate Supertrend manually
-  const typicalPrices = candles.map((c) => (c.high + c.low + c.close) / 3);
+  const prevUptrend = isUptrend[isUptrend.length - 2]!;
+  const currentUptrend = isUptrend[isUptrend.length - 1]!;
+
+  const currentClose = candles[candles.length - 1]!.close;
   const atr = atrValues[atrValues.length - 1]!;
-  const currentTP = typicalPrices[typicalPrices.length - 1]!;
-  const prevTP = typicalPrices[typicalPrices.length - 2]!;
-  const currentHigh = candles[candles.length - 1]!.high;
-  const currentLow = candles[candles.length - 1]!.low;
+  const finalIdx = finalUpper.length - 1;
+  const supertrendValue = currentUptrend ? finalLower[finalIdx]! : finalUpper[finalIdx]!;
 
-  // Basic upper and lower bands
-  const upperBand = currentTP + multiplier * atr;
-  const lowerBand = currentTP - multiplier * atr;
-
-  // For trend detection, compare current close to bands
-  const prevCandle = candles[candles.length - 2]!;
-
-  // Simple Supertrend signal: price crossing the bands
-  // Long: close was below lower band, now above
-  if (prevCandle.close <= lowerBand && candles[candles.length - 1]!.close > lowerBand) {
-    return { signal: "LONG", metadata: { atr, lowerBand, upperBand } };
+  // Signal: trend change detection
+  if (!prevUptrend && currentUptrend) {
+    // Downtrend to Uptrend = LONG
+    return {
+      signal: "LONG",
+      metadata: {
+        supertrend: supertrendValue,
+        trend: "UP",
+        close: currentClose,
+        atr,
+      },
+    };
   }
 
-  // Short: close was above upper band, now below
-  if (prevCandle.close >= upperBand && candles[candles.length - 1]!.close < upperBand) {
-    return { signal: "SHORT", metadata: { atr, lowerBand, upperBand } };
+  if (prevUptrend && !currentUptrend) {
+    // Uptrend to Downtrend = SHORT
+    return {
+      signal: "SHORT",
+      metadata: {
+        supertrend: supertrendValue,
+        trend: "DOWN",
+        close: currentClose,
+        atr,
+      },
+    };
   }
 
-  // Alternative: trend flip based on price position relative to center
-  const centerBand = currentTP;
-  const wasBelow = prevCandle.close < centerBand;
-  const isAbove = candles[candles.length - 1]!.close > centerBand;
-  const wasAbove = prevCandle.close > centerBand;
-  const isBelow = candles[candles.length - 1]!.close < centerBand;
-
-  if (wasBelow && isAbove) {
-    return { signal: "LONG", metadata: { atr, centerBand } };
-  }
-
-  if (wasAbove && isBelow) {
-    return { signal: "SHORT", metadata: { atr, centerBand } };
-  }
-
-  return { signal: "NEUTRAL", metadata: { atr, centerBand } };
+  // No trend change
+  return {
+    signal: "NEUTRAL",
+    metadata: {
+      supertrend: supertrendValue,
+      trend: currentUptrend ? "UP" : "DOWN",
+      close: currentClose,
+      atr,
+    },
+  };
 }
 
 // ==========================================
@@ -216,7 +286,8 @@ export function rsi50Cross(
 }
 
 // ==========================================
-// Bollinger Bands (20, 2)
+// Bollinger Bands (20, 2) - Mean Reversion Strategy
+// PRD 3.6: Long when close below lower band, Short when close above upper band
 // ==========================================
 
 export function bollingerBands(
@@ -237,7 +308,8 @@ export function bollingerBands(
   const currentClose = closes[closes.length - 1]!;
   const prevClose = closes[closes.length - 2]!;
 
-  // Long: close was above lower band, now below (breakout below)
+  // Mean Reversion: Detect cross into oversold/overbought zones
+  // Long: price crosses BELOW lower band (entering oversold territory)
   if (prevClose > current.lower! && currentClose <= current.lower!) {
     return {
       signal: "LONG",
@@ -245,7 +317,7 @@ export function bollingerBands(
     };
   }
 
-  // Short: close was below upper band, now above (breakout above)
+  // Short: price crosses ABOVE upper band (entering overbought territory)
   if (prevClose < current.upper! && currentClose >= current.upper!) {
     return {
       signal: "SHORT",

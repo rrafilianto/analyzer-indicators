@@ -55,7 +55,7 @@ export interface TradingEngine {
     exitPrice: number,
     size: number,
     leverage: number,
-    tradingFee: number
+    tradingFee?: number
   ): number;
 
   /**
