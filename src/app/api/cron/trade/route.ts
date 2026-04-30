@@ -6,7 +6,7 @@ import { runIndicator } from "../../../../lib/indicators";
 import { detectMarketStructure } from "../../../../engine/market-structure";
 import { processSignal } from "../../../../engine/position-manager";
 import { PaperTradingEngine } from "../../../../engine/paper-trading-engine";
-import { recalculateMetrics, getAllMetrics } from "../../../../engine/metrics";
+import { recalculateMetrics, recalculateAllMetrics, getAllMetrics } from "../../../../engine/metrics";
 import { checkGlobalRisk, resetDailyLoss, autoResetDailyLoss } from "../../../../engine/risk-manager";
 import { syncIndicatorEquity } from "../../../../engine/equity";
 import { notifyCronFatalError, notifyCronIndicatorError } from "../../../../lib/telegram";
@@ -87,7 +87,13 @@ export async function GET(request: NextRequest) {
 
     // Step 5: Process each indicator sequentially
     const engine = new PaperTradingEngine();
-    const results: Record<string, { signal: string; error?: string; durationMs?: number }> = {};
+    const results: Record<string, {
+      signal: string;
+      error?: string;
+      durationMs?: number;
+      tradeClosed?: boolean;
+      metricsRecalculated?: boolean;
+    }> = {};
 
     for (const indicator of indicators) {
       const start = Date.now();
@@ -102,13 +108,31 @@ export async function GET(request: NextRequest) {
         });
 
         logger.info(`Signal: ${result.signal}`, { signal: result.signal }, indicator.name);
-        results[indicator.name] = { signal: result.signal, durationMs: Date.now() - start };
 
-        await processSignal(indicator.id, result.signal, candles, marketStructure, engine, logger, indicator.name);
+        const tradeClosed = await processSignal(
+          indicator.id,
+          result.signal,
+          candles,
+          marketStructure,
+          engine,
+          logger,
+          indicator.name
+        );
         if (currentPrice > 0) {
           await syncIndicatorEquity(indicator.id, currentPrice);
         }
-        await recalculateMetrics(indicator.id);
+        let metricsRecalculated = false;
+        if (tradeClosed) {
+          await recalculateMetrics(indicator.id);
+          metricsRecalculated = true;
+        }
+
+        results[indicator.name] = {
+          signal: result.signal,
+          durationMs: Date.now() - start,
+          tradeClosed,
+          metricsRecalculated,
+        };
 
         logger.info(`Processed successfully`, { durationMs: Date.now() - start }, indicator.name);
       } catch (error) {
@@ -194,6 +218,24 @@ export async function POST(request: NextRequest) {
         await resetDailyLoss();
         await logger.flush();
         return NextResponse.json({ status: "success", message: "Daily loss reset" });
+
+      case "recalculate_metrics": {
+        const indicatorId = typeof body?.indicatorId === "string" ? body.indicatorId.trim() : "";
+        logger.info("Manual metrics recalculation requested", {
+          indicatorId: indicatorId || null,
+          persist: true,
+        });
+
+        const summary = await recalculateAllMetrics(indicatorId || undefined);
+        await logger.flush();
+        return NextResponse.json({
+          status: "success",
+          message: indicatorId
+            ? `Metrics recalculated for indicator ${indicatorId}`
+            : "Metrics recalculated for all indicators",
+          summary,
+        });
+      }
 
       default:
         logger.warn("Unknown action", { action });

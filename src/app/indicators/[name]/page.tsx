@@ -60,13 +60,24 @@ const TRADE_PAGE_SIZE = 10;
 
 const indicatorLabels: Record<string, string> = {
   ema_crossover: "EMA Cross (9/21)",
+  ema_crossover_v2: "EMA Cross (9/21) + ADX",
   macd: "MACD (12,26,9)",
+  macd_v2: "MACD (12,26,9) + ADX",
   supertrend: "Supertrend",
+  supertrend_v2: "Supertrend + ADX",
   rsi_70_30: "RSI 70/30",
   rsi_70_30_v2: "RSI 70/30 V2",
+  rsi_70_30_v2_adx: "RSI 70/30 V2 + ADX",
   rsi_50_cross: "RSI 50 Cross",
+  rsi_50_cross_adx: "RSI 50 Cross + ADX",
+  rsi_70_30_adx: "RSI 70/30 + ADX",
   bollinger: "Bollinger Bands",
+  bollinger_adx: "Bollinger Bands + ADX",
   bollinger_v2: "Bollinger Bands V2",
+  bollinger_v2_adx: "Bollinger Bands V2 + ADX",
+  donchian: "Donchian Breakout",
+  vwap: "VWAP Bias + Pullback",
+  vwap_cross: "VWAP Cross",
 };
 
 export default function IndicatorDetailPage({

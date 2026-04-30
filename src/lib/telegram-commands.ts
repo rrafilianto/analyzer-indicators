@@ -132,13 +132,24 @@ async function cmdHelp(chatId: number): Promise<void> {
 
 const INDICATOR_EMOJI: Record<string, string> = {
   ema_crossover: "📈",
+  ema_crossover_v2: "🧿",
   macd:          "⚡",
+  macd_v2:       "💖",
   supertrend:    "🌊",
+  supertrend_v2: "🌿",
   rsi_70_30:     "🔴",
   rsi_70_30_v2:  "🟡",
+  rsi_70_30_v2_adx: "🟫",
   rsi_50_cross:  "🟣",
+  rsi_50_cross_adx:  "🧬",
+  rsi_70_30_adx:  "🟨",
   bollinger:     "🎯",
+  bollinger_adx: "🟧",
   bollinger_v2:  "🟠",
+  bollinger_v2_adx: "🟤",
+  donchian: "📦",
+  vwap: "🧭",
+  vwap_cross: "🧲",
 };
 
 const SIDE_EMOJI: Record<string, string> = {

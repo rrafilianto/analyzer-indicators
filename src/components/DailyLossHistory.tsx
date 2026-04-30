@@ -16,13 +16,24 @@ interface DailyEntry {
 
 const INDICATOR_COLORS: Record<string, string> = {
   ema_crossover: "#60a5fa",
+  ema_crossover_v2: "#3b82f6",
   macd: "#f472b6",
+  macd_v2: "#ec4899",
   supertrend: "#34d399",
+  supertrend_v2: "#10b981",
   rsi_70_30: "#fbbf24",
   rsi_70_30_v2: "#eab308",
+  rsi_70_30_v2_adx: "#a16207",
   rsi_50_cross: "#a78bfa",
+  rsi_50_cross_adx: "#8b5cf6",
+  rsi_70_30_adx: "#ca8a04",
   bollinger: "#fb923c",
+  bollinger_adx: "#f59e0b",
   bollinger_v2: "#f97316",
+  bollinger_v2_adx: "#ea580c",
+  donchian: "#22d3ee",
+  vwap: "#06b6d4",
+  vwap_cross: "#0891b2",
 };
 
 export function DailyLossHistory({ indicatorName }: { indicatorName?: string }) {

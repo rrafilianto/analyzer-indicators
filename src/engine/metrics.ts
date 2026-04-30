@@ -254,3 +254,47 @@ export async function getAllMetrics(): Promise<
     updated_at: row.updated_at,
   }));
 }
+
+/**
+ * Manual full metrics recalculation helper.
+ * Rebuilds metrics either for:
+ * - one indicator (if indicatorId provided), or
+ * - all indicators (default)
+ */
+export async function recalculateAllMetrics(indicatorId?: string): Promise<{
+  processed: number;
+  failed: number;
+  failures: Array<{ indicatorId: string; error: string }>;
+}> {
+  let indicatorIds: string[] = [];
+
+  if (indicatorId) {
+    indicatorIds = [indicatorId];
+  } else {
+    const { data: indicators, error } = await getSupabase()
+      .from("indicators")
+      .select("id");
+
+    if (error) {
+      throw error;
+    }
+
+    indicatorIds = (indicators ?? []).map((i) => i.id as string);
+  }
+
+  let processed = 0;
+  let failed = 0;
+  const failures: Array<{ indicatorId: string; error: string }> = [];
+
+  for (const id of indicatorIds) {
+    try {
+      await recalculateMetrics(id);
+      processed++;
+    } catch (error) {
+      failed++;
+      failures.push({ indicatorId: id, error: formatError(error, "recalculate-all-metrics") });
+    }
+  }
+
+  return { processed, failed, failures };
+}

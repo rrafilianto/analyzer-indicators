@@ -58,12 +58,12 @@ export async function processSignal(
   engine: TradingEngine = new PaperTradingEngine(),
   logger?: Logger,
   indicatorName?: string
-): Promise<void> {
+): Promise<boolean> {
   try {
     // Validate candles data
     if (!candles || candles.length === 0) {
       console.warn(`[PositionManager] No candles data for ${indicatorId}, skipping`);
-      return;
+      return false;
     }
 
     // Risk check
@@ -72,14 +72,12 @@ export async function processSignal(
       console.log(`[PositionManager] ${indicatorId} blocked by risk: ${riskCheck.reason}`);
       // ZOMBIE PREVENTION: We must still monitor existing open positions to enforce SL/TP triggers
       // before blocking normal execution.
-      await checkOpenPosition(indicatorId, candles, engine, marketStructure, logger, indicatorName);
-      return;
+      return await checkOpenPosition(indicatorId, candles, engine, marketStructure, logger, indicatorName);
     }
 
     if (signal === "NEUTRAL") {
       // Check existing position for TP/SL
-      await checkOpenPosition(indicatorId, candles, engine, marketStructure, logger, indicatorName);
-      return;
+      return await checkOpenPosition(indicatorId, candles, engine, marketStructure, logger, indicatorName);
     }
 
     const openPosition = await getOpenPosition(indicatorId);
@@ -87,9 +85,10 @@ export async function processSignal(
     if (!openPosition) {
       // No position → try to open new
       await openNewPosition(indicatorId, signal, candles, marketStructure, engine, logger, indicatorName);
+      return false;
     } else {
       // Has open position → check for reverse, TP, SL
-      await handleOpenPosition(
+      return await handleOpenPosition(
         indicatorId,
         signal,
         openPosition,
@@ -102,6 +101,7 @@ export async function processSignal(
     }
   } catch (error) {
     console.error(`[PositionManager] Error processing signal for ${indicatorId}:`, formatError(error, "position-manager"));
+    return false;
   }
 }
 
@@ -115,9 +115,9 @@ async function checkOpenPosition(
   marketStructure: MarketStructure,
   logger?: Logger,
   indicatorName?: string
-): Promise<void> {
+): Promise<boolean> {
   const position = await getOpenPosition(indicatorId);
-  if (!position) return;
+  if (!position) return false;
 
   const lastCandle = candles[candles.length - 1]!;
   const high = lastCandle.high;
@@ -135,7 +135,7 @@ async function checkOpenPosition(
       ? position.stop_loss * (1 - slippageBps)
       : position.stop_loss * (1 + slippageBps);
     await closePositionWithTrade(position, slExecutionPrice, "sl", engine, logger, indicatorName);
-    return;
+    return true;
   }
 
   // Check TP hit
@@ -145,11 +145,12 @@ async function checkOpenPosition(
 
   if (isTpHit) {
     await closePositionWithTrade(position, position.take_profit, "tp", engine, logger, indicatorName);
-    return;
+    return true;
   }
 
   // Update SL if market structure improved (trailing SL)
   await updateTrailingStopLoss(position, marketStructure);
+  return false;
 }
 
 async function handleOpenPosition(
@@ -161,7 +162,7 @@ async function handleOpenPosition(
   engine: TradingEngine,
   logger?: Logger,
   indicatorName?: string
-): Promise<void> {
+): Promise<boolean> {
   const lastCandle = candles[candles.length - 1]!;
   const currentPrice = lastCandle.close;
   const high = lastCandle.high;
@@ -184,7 +185,7 @@ async function handleOpenPosition(
       : position.stop_loss * (1 + slippageBps);
       
     await closePositionWithTrade(position, slExecutionPrice, "sl", engine, logger, indicatorName);
-    return;
+    return true;
   }
 
   // 2. Check TP
@@ -195,7 +196,7 @@ async function handleOpenPosition(
   if (isTpHit) {
     // Limit Order: Executes EXACTLY at TP price (no slippage)
     await closePositionWithTrade(position, position.take_profit, "tp", engine, logger, indicatorName);
-    return;
+    return true;
   }
 
   // 3. Reverse signal: close old + open new
@@ -212,11 +213,12 @@ async function handleOpenPosition(
 
     // Small delay to ensure position is closed
     await openNewPosition(indicatorId, signal, candles, marketStructure, engine, logger, indicatorName);
-    return;
+    return true;
   }
 
   // Same direction → hold (update trailing SL if applicable)
   await updateTrailingStopLoss(position, marketStructure);
+  return false;
 }
 
 /**
