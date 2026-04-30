@@ -12,8 +12,10 @@ const INDICATOR_COLORS: Record<string, string> = {
   macd: "#f472b6",
   supertrend: "#34d399",
   rsi_70_30: "#fbbf24",
+  rsi_70_30_v2: "#eab308",
   rsi_50_cross: "#a78bfa",
   bollinger: "#fb923c",
+  bollinger_v2: "#f97316",
 };
 
 interface IndicatorData {

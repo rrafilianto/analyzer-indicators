@@ -38,8 +38,10 @@ export type IndicatorName =
   | "macd"
   | "supertrend"
   | "rsi_70_30"
+  | "rsi_70_30_v2"
   | "rsi_50_cross"
-  | "bollinger";
+  | "bollinger"
+  | "bollinger_v2";
 
 // ==========================================
 // Position

@@ -1,17 +1,29 @@
 import { EMA, MACD, RSI, BollingerBands, ATR } from "technicalindicators";
 import type { Candle, IndicatorConfig, IndicatorResult, Signal } from "../../engine/types";
 
+function getConfigNumber(
+  config: IndicatorConfig | undefined,
+  key: string,
+  fallback: number
+): number {
+  const raw = config?.config?.[key];
+  if (typeof raw !== "number" || Number.isNaN(raw) || !Number.isFinite(raw)) {
+    return fallback;
+  }
+  return raw;
+}
+
 // ==========================================
 // EMA Crossover (9 / 21)
 // ==========================================
 
 export function emaCrossover(
   candles: Candle[],
-  _config?: IndicatorConfig
+  config?: IndicatorConfig
 ): IndicatorResult {
   const closes = candles.map((c) => c.close);
-  const fastPeriod = 9;
-  const slowPeriod = 21;
+  const fastPeriod = Math.max(1, Math.floor(getConfigNumber(config, "fast_period", 9)));
+  const slowPeriod = Math.max(1, Math.floor(getConfigNumber(config, "slow_period", 21)));
 
   const fastEMA = EMA.calculate({ period: fastPeriod, values: closes });
   const slowEMA = EMA.calculate({ period: slowPeriod, values: closes });
@@ -45,12 +57,12 @@ export function emaCrossover(
 
 export function macd(
   candles: Candle[],
-  _config?: IndicatorConfig
+  config?: IndicatorConfig
 ): IndicatorResult {
   const closes = candles.map((c) => c.close);
-  const fastPeriod = 12;
-  const slowPeriod = 26;
-  const signalPeriod = 9;
+  const fastPeriod = Math.max(1, Math.floor(getConfigNumber(config, "fast_period", 12)));
+  const slowPeriod = Math.max(1, Math.floor(getConfigNumber(config, "slow_period", 26)));
+  const signalPeriod = Math.max(1, Math.floor(getConfigNumber(config, "signal_period", 9)));
 
   const macdResult = MACD.calculate({
     fastPeriod,
@@ -87,10 +99,10 @@ export function macd(
 
 export function supertrend(
   candles: Candle[],
-  _config?: IndicatorConfig
+  config?: IndicatorConfig
 ): IndicatorResult {
-  const atrPeriod = 10;
-  const multiplier = 3;
+  const atrPeriod = Math.max(1, Math.floor(getConfigNumber(config, "atr_period", 10)));
+  const multiplier = Math.max(0.1, getConfigNumber(config, "multiplier", 3));
 
   // Need at least atrPeriod + 2 candles for ATR + trend change detection
   if (candles.length < atrPeriod + 2) {
@@ -223,11 +235,11 @@ export function supertrend(
 
 export function rsi7030(
   candles: Candle[],
-  _config?: IndicatorConfig
+  config?: IndicatorConfig
 ): IndicatorResult {
-  const period = 14;
-  const overbought = 70;
-  const oversold = 30;
+  const period = Math.max(1, Math.floor(getConfigNumber(config, "period", 14)));
+  const overbought = getConfigNumber(config, "overbought", 70);
+  const oversold = getConfigNumber(config, "oversold", 30);
 
   const closes = candles.map((c) => c.close);
   const rsiValues = RSI.calculate({ period, values: closes });
@@ -252,15 +264,51 @@ export function rsi7030(
 }
 
 // ==========================================
+// RSI 70/30 V2 (Cross-based trigger)
+// ==========================================
+
+export function rsi7030V2(
+  candles: Candle[],
+  config?: IndicatorConfig
+): IndicatorResult {
+  const period = Math.max(1, Math.floor(getConfigNumber(config, "period", 14)));
+  const overbought = getConfigNumber(config, "overbought", 70);
+  const oversold = getConfigNumber(config, "oversold", 30);
+
+  const closes = candles.map((c) => c.close);
+  const rsiValues = RSI.calculate({ period, values: closes });
+
+  if (rsiValues.length < 2) {
+    return { signal: "NEUTRAL" };
+  }
+
+  const prevRSI = rsiValues[rsiValues.length - 2]!;
+  const currentRSI = rsiValues[rsiValues.length - 1]!;
+
+  // Cross-based entry into extreme zones:
+  // LONG when RSI crosses down into oversold zone.
+  if (prevRSI >= oversold && currentRSI < oversold) {
+    return { signal: "LONG", metadata: { rsi: currentRSI, prevRsi: prevRSI } };
+  }
+
+  // SHORT when RSI crosses up into overbought zone.
+  if (prevRSI <= overbought && currentRSI > overbought) {
+    return { signal: "SHORT", metadata: { rsi: currentRSI, prevRsi: prevRSI } };
+  }
+
+  return { signal: "NEUTRAL", metadata: { rsi: currentRSI, prevRsi: prevRSI } };
+}
+
+// ==========================================
 // RSI 50 Cross (Midline Crossover)
 // ==========================================
 
 export function rsi50Cross(
   candles: Candle[],
-  _config?: IndicatorConfig
+  config?: IndicatorConfig
 ): IndicatorResult {
-  const period = 14;
-  const midline = 50;
+  const period = Math.max(1, Math.floor(getConfigNumber(config, "period", 14)));
+  const midline = getConfigNumber(config, "midline", 50);
 
   const closes = candles.map((c) => c.close);
   const rsiValues = RSI.calculate({ period, values: closes });
@@ -292,10 +340,10 @@ export function rsi50Cross(
 
 export function bollingerBands(
   candles: Candle[],
-  _config?: IndicatorConfig
+  config?: IndicatorConfig
 ): IndicatorResult {
-  const period = 20;
-  const stdDev = 2;
+  const period = Math.max(1, Math.floor(getConfigNumber(config, "period", 20)));
+  const stdDev = Math.max(0.1, getConfigNumber(config, "std_dev", 2));
 
   const closes = candles.map((c) => c.close);
   const bbResult = BollingerBands.calculate({ period, values: closes, stdDev });
@@ -332,6 +380,74 @@ export function bollingerBands(
 }
 
 // ==========================================
+// Bollinger Bands V2 (20, 2) - Mean Reversion Strategy
+// Fix: use previous band for previous close comparison
+// ==========================================
+
+export function bollingerBandsV2(
+  candles: Candle[],
+  config?: IndicatorConfig
+): IndicatorResult {
+  const period = Math.max(1, Math.floor(getConfigNumber(config, "period", 20)));
+  const stdDev = Math.max(0.1, getConfigNumber(config, "std_dev", 2));
+
+  const closes = candles.map((c) => c.close);
+  const bbResult = BollingerBands.calculate({ period, values: closes, stdDev });
+
+  if (bbResult.length < 2 || closes.length < 2) {
+    return { signal: "NEUTRAL" };
+  }
+
+  const current = bbResult[bbResult.length - 1]!;
+  const prev = bbResult[bbResult.length - 2]!;
+  const currentClose = closes[closes.length - 1]!;
+  const prevClose = closes[closes.length - 2]!;
+
+  // Mean Reversion: detect cross into oversold/overbought zones using matching band timestamps.
+  // Long: previous close above previous lower band, then current close below/equal current lower band.
+  if (prevClose > prev.lower! && currentClose <= current.lower!) {
+    return {
+      signal: "LONG",
+      metadata: {
+        upper: current.upper,
+        middle: current.middle,
+        lower: current.lower,
+        prevUpper: prev.upper,
+        prevMiddle: prev.middle,
+        prevLower: prev.lower,
+      },
+    };
+  }
+
+  // Short: previous close below previous upper band, then current close above/equal current upper band.
+  if (prevClose < prev.upper! && currentClose >= current.upper!) {
+    return {
+      signal: "SHORT",
+      metadata: {
+        upper: current.upper,
+        middle: current.middle,
+        lower: current.lower,
+        prevUpper: prev.upper,
+        prevMiddle: prev.middle,
+        prevLower: prev.lower,
+      },
+    };
+  }
+
+  return {
+    signal: "NEUTRAL",
+    metadata: {
+      upper: current.upper,
+      middle: current.middle,
+      lower: current.lower,
+      prevUpper: prev.upper,
+      prevMiddle: prev.middle,
+      prevLower: prev.lower,
+    },
+  };
+}
+
+// ==========================================
 // Indicator Registry & Dispatcher
 // ==========================================
 
@@ -342,8 +458,10 @@ export const indicatorRegistry: Record<string, IndicatorFn> = {
   macd,
   supertrend,
   rsi_70_30: rsi7030,
+  rsi_70_30_v2: rsi7030V2,
   rsi_50_cross: rsi50Cross,
   bollinger: bollingerBands,
+  bollinger_v2: bollingerBandsV2,
 };
 
 /**

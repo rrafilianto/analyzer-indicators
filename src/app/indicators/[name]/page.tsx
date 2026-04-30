@@ -63,8 +63,10 @@ const indicatorLabels: Record<string, string> = {
   macd: "MACD (12,26,9)",
   supertrend: "Supertrend",
   rsi_70_30: "RSI 70/30",
+  rsi_70_30_v2: "RSI 70/30 V2",
   rsi_50_cross: "RSI 50 Cross",
   bollinger: "Bollinger Bands",
+  bollinger_v2: "Bollinger Bands V2",
 };
 
 export default function IndicatorDetailPage({
